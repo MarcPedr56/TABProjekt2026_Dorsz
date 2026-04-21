@@ -8,6 +8,9 @@ function App() {
     const [role, setRole] = useState(null); 
     const [view, setView] = useState("dashboard");
     const [reservations, setReservations] = useState([]);
+    const [selectedRoom, setSelectedRoom] = useState(null);
+    const [myServices, setMyServices] = useState([]);
+    const [user, setUser] = useState(null);
     const [reservationsLoading, setReservationsLoading] = useState(false);
     const [form, setForm] = useState({
         first_name: "",
@@ -22,6 +25,18 @@ function App() {
     const [searchPesel, setSearchPesel] = useState("");
     const [guests, setGuests] = useState([]);
     const [guestsLoading, setGuestsLoading] = useState(false);
+    const [serviceForm, setServiceForm] = useState({
+        date: "",
+        time: "",
+        quantity: "",
+        reservationId: ""
+    });
+    const handleServiceChange = (e) => {
+        setServiceForm({
+            ...serviceForm,
+            [e.target.name]: e.target.value
+        });
+    };
     const handleChange = (e) => {
         setForm({
             ...form,
@@ -85,6 +100,52 @@ function App() {
         else if (role === "admin") setView("admin");
         else if (role === "reception") setView("reception");
         else setView("account");
+    };
+    const fetchMyReservations = () => {
+        if (!user || !user.email) return;
+
+        setReservationsLoading(true);
+
+        fetch(`http://127.0.0.1:8000/reservations/user/${user.email}`)
+            .then(res => res.json())
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setReservations(data);
+                } else {
+                    setReservations([]);
+                }
+                setReservationsLoading(false);
+            })
+            .catch(() => setReservationsLoading(false));
+    };
+    const fetchMyServices = () => {
+        if (!user || !user.email) return;
+
+        fetch(`http://127.0.0.1:8000/services/user/${user.email}`)
+            .then(res => res.json())
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setMyServices(data);
+                } else {
+                    setMyServices([]); 
+                    console.log("Niepoprawne dane usług:", data);
+                }
+            })
+
+            .catch(() => setMyServices([]));
+    };
+    const fetchMyPayments = () => {
+        if (!user || !user.email) return;
+
+        setPaymentsLoading(true);
+
+        fetch(`http://127.0.0.1:8000/payments/user/${user.email}`)
+            .then(res => res.json())
+            .then(data => {
+                setPayments(Array.isArray(data) ? data : []);
+                setPaymentsLoading(false);
+            })
+            .catch(() => setPaymentsLoading(false));
     };
     const styles = {
         page: {
@@ -329,7 +390,7 @@ function App() {
                             else setView("account");
                         }}
                     >
-                        {view === "account" ? "Moje konto" : "Zaloguj się"}
+                        {role ? "Moje konto" : "Zaloguj się"}
                     </button>
                 </div>
             </div>
@@ -385,7 +446,17 @@ function App() {
                                     {room.status}
                                 </p>
 
-                                <button style={styles.button}>
+                                <button
+                                    style={styles.button}
+                                    onClick={() => {
+                                        if (!role) {
+                                            setView("login");
+                                        } else {
+                                            setSelectedRoom(room);
+                                            setView("roomBooking");
+                                        }
+                                    }}
+                                >
                                     Rezerwuj
                                 </button>
 
@@ -441,10 +512,49 @@ function App() {
                 <div style={styles.card}>
                     <h2>Rezerwacja usługi</h2>
 
-                    <input placeholder="Data" style={styles.input} />
-                    <input placeholder="Godzina" style={styles.input} />
+                    <input
+                        name="date"
+                        type="date"
+                        style={styles.input}
+                        value={serviceForm.date}
+                        onChange={handleServiceChange}
+                    />
 
-                    <button style={styles.button}>
+                    <input
+                        name="time"
+                        type="time"
+                        style={styles.input}
+                        value={serviceForm.time}
+                        onChange={handleServiceChange}
+                    />
+
+                    <input
+                        name="quantity"
+                        type="number"
+                        placeholder="Ilość"
+                        style={styles.input}
+                        value={serviceForm.quantity}
+                        onChange={handleServiceChange}
+                    />
+
+                    <input
+                        name="reservationId"
+                        placeholder="Numer rezerwacji pobytu"
+                        style={styles.input}
+                        value={serviceForm.reservationId}
+                        onChange={handleServiceChange}
+                    />
+
+                    <button
+                        style={styles.button}
+                        onClick={() => {
+                            console.log("Rezerwacja usługi:", serviceForm);
+
+                            // później tutaj pójdzie fetch do backendu
+
+                            setView("services");
+                        }}
+                    >
                         Zarezerwuj
                     </button>
 
@@ -470,12 +580,15 @@ function App() {
 
                             if (email === "admin@test.com") {
                                 setRole("admin");
+                                setUser({ email });
                                 setView("admin");
                             } else if (email === "recepcja@test.com") {
                                 setRole("reception");
+                                setUser({ email });
                                 setView("reception");
                             } else {
                                 setRole("user");
+                                setUser({ email }); // 🔥 KLUCZOWE
                                 setView("account");
                             }
                         }}
@@ -500,7 +613,10 @@ function App() {
 
                         <div
                             style={styles.accountCard}
-                            onClick={() => setView("rooms")}
+                            onClick={() => {
+                                fetchMyReservations();
+                                setView("myReservations");
+                            }}
                         >
                             <h3>Moje rezerwacje</h3>
                             <p>Zobacz i zarządzaj swoimi rezerwacjami</p>
@@ -508,10 +624,13 @@ function App() {
 
                         <div
                             style={styles.accountCard}
-                            onClick={() => setView("services")}
+                            onClick={() => {
+                                fetchMyPayments();
+                                setView("myPayments");
+                            }}
                         >
-                            <h3>Moje usługi</h3>
-                            <p>Sprawdź dostępne usługi i rezerwacje</p>
+                            <h3>Moje płatności</h3>
+                            <p>Sprawdź historię swoich płatności</p>
                         </div>
                         <button
                             style={styles.link}
@@ -984,6 +1103,141 @@ function App() {
                         }}
                     >
                         Wyloguj
+                    </button>
+                </div>
+            )}
+            {view === "roomBooking" && selectedRoom && (
+                <div style={styles.card}>
+                    <h2>Rezerwacja pokoju</h2>
+
+                    <p><strong>Pokój:</strong> {selectedRoom.room_number}</p>
+                    <p><strong>Typ:</strong> {selectedRoom.room_type}</p>
+                    <p><strong>Cena:</strong> {selectedRoom.price_per_night} PLN</p>
+
+                    <input
+                        type="date"
+                        style={styles.input}
+                        placeholder="Data od"
+                    />
+
+                    <input
+                        type="date"
+                        style={styles.input}
+                        placeholder="Data do"
+                    />
+
+                    <button
+                        style={styles.button}
+                        onClick={() => {
+                            console.log("Rezerwacja pokoju:", selectedRoom);
+                            setView("rooms");
+                        }}
+                    >
+                        Zarezerwuj
+                    </button>
+
+                    <button style={styles.link} onClick={goBack}>
+                        ← Powrót
+                    </button>
+                </div>
+            )}
+            {view === "myReservations" && (
+                <div style={styles.section}>
+                    <h2>Moje rezerwacje</h2>
+
+                    {reservationsLoading && <p>Ładowanie...</p>}
+
+                    <table style={styles.table}>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Data od</th>
+                                <th>Data do</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {reservations.map((r) => (
+                                <tr key={r.reservation_id}>
+                                    <td>{r.reservation_id}</td>
+                                    <td>{r.start_date}</td>
+                                    <td>{r.end_date}</td>
+                                    <td>{r.status}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+
+                    <button style={styles.link} onClick={goBack}>
+                        ← Powrót
+                    </button>
+                </div>
+            )}
+            {view === "myServices" && (
+                <div style={styles.section}>
+                    <h2>Moje usługi</h2>
+
+                    <table style={styles.table}>
+                        <thead>
+                            <tr>
+                                <th>Nazwa</th>
+                                <th>Data</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {myServices.map((s, i) => (
+                                <tr key={i}>
+                                    <td>{s.name}</td>
+                                    <td>{s.date}</td>
+                                    <td>{s.status}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+
+                    <button style={styles.link} onClick={goBack}>
+                        ← Powrót
+                    </button>
+                </div>
+            )}
+            {view === "myPayments" && (
+                <div style={styles.section}>
+                    <h2>Płatności użytkownika</h2>
+
+                    {paymentsLoading && <p>Ładowanie...</p>}
+
+                    {!paymentsLoading && payments.length > 0 && (
+                        <table style={styles.table}>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Kwota</th>
+                                    <th>Metoda</th>
+                                    <th>Status</th>
+                                    <th>Data</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {payments.map((p) => (
+                                    <tr key={p.payment_id}>
+                                        <td>{p.payment_id}</td>
+                                        <td>{p.amount} PLN</td>
+                                        <td>{p.method}</td>
+                                        <td>{p.status}</td>
+                                        <td>{p.payment_date}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+
+                    {!paymentsLoading && payments.length === 0 && (
+                        <p>Brak płatności</p>
+                    )}
+
+                    <button style={styles.link} onClick={goBack}>
+                        ← Powrót
                     </button>
                 </div>
             )}
