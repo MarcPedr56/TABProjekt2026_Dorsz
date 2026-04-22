@@ -7,9 +7,12 @@ function App() {
     const [error, setError] = useState(null);
     const [role, setRole] = useState(null); 
     const [view, setView] = useState("dashboard");
+    const [selectedGuest, setSelectedGuest] = useState(null);
     const [reservations, setReservations] = useState([]);
     const [selectedRoom, setSelectedRoom] = useState(null);
     const [myServices, setMyServices] = useState([]);
+    const [employees, setEmployees] = useState([]);
+    const [employeesLoading, setEmployeesLoading] = useState(false);
     const [user, setUser] = useState(null);
     const [reservationsLoading, setReservationsLoading] = useState(false);
     const [form, setForm] = useState({
@@ -37,11 +40,33 @@ function App() {
             [e.target.name]: e.target.value
         });
     };
+    const fetchGuestReservations = (guestId) => {
+        setReservationsLoading(true);
+
+        fetch(`http://127.0.0.1:8000/reservations/guest/${guestId}`)
+            .then(res => res.json())
+            .then(data => {
+                setReservations(Array.isArray(data) ? data : []);
+                setReservationsLoading(false);
+            })
+            .catch(() => setReservationsLoading(false));
+    };
     const handleChange = (e) => {
         setForm({
             ...form,
             [e.target.name]: e.target.value
         });
+    };
+    const fetchEmployees = () => {
+        setEmployeesLoading(true);
+
+        fetch("http://127.0.0.1:8000/employees")
+            .then(res => res.json())
+            .then(data => {
+                setEmployees(Array.isArray(data) ? data : []);
+                setEmployeesLoading(false);
+            })
+            .catch(() => setEmployeesLoading(false));
     };
     useEffect(() => {
         fetch('http://127.0.0.1:8000/rooms')
@@ -146,6 +171,18 @@ function App() {
                 setPaymentsLoading(false);
             })
             .catch(() => setPaymentsLoading(false));
+    };
+    const getRoomImage = (type) => {
+        if (type === "single") {
+            return "https://images.unsplash.com/photo-1611892440504-42a792e24d32";
+        }
+        if (type === "double") {
+            return "https://images.unsplash.com/photo-1590490360182-c33d57733427";
+        }
+        if (type === "suite") {
+            return "https://images.unsplash.com/photo-1582719508461-905c673771fd";
+        }
+        return "https://images.unsplash.com/photo-1566073771259-6a8506099945";
     };
     const styles = {
         page: {
@@ -431,7 +468,7 @@ function App() {
                             <div key={room.room_id} style={styles.roomCard}>
 
                                 <img
-                                    src="https://images.unsplash.com/photo-1566665797739-1674de7a421a"
+                                    src={getRoomImage(room.room_type)}
                                     alt="Pokój"
                                     style={styles.roomImage}
                                 />
@@ -653,7 +690,7 @@ function App() {
 
                         <div
                             style={styles.accountCard}
-                            onClick={() => setView("adminRooms")}
+                            onClick={() => setView("rooms")}
                         >
                             <h3>Pokoje</h3>
                             <p>Zarządzaj pokojami</p>
@@ -707,7 +744,10 @@ function App() {
 
                         <div
                             style={styles.accountCard}
-                            onClick={() => setView("adminStaff")}
+                            onClick={() => {
+                                fetchEmployees();
+                                setView("adminStaff");
+                            }}
                         >
                             <h3>Pracownicy</h3>
                             <p>Zarządzanie personelem</p>
@@ -741,18 +781,34 @@ function App() {
                                     <th>Nazwisko</th>
                                     <th>Email</th>
                                     <th>Telefon</th>
+                                    <th>Preferencje</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {guests.map((g) => (
-                                    <tr key={g.guest_id}>
-                                        <td>{g.first_name}</td>
-                                        <td>{g.last_name}</td>
-                                        <td>{g.email}</td>
-                                        <td>{g.phone}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
+    {Array.isArray(guests) && guests.length > 0 ? (
+        guests.map((g) => (
+            <tr
+                key={g.guest_id}
+                style={{ cursor: "pointer" }}
+                onClick={() => {
+                    setSelectedGuest(g);
+                    fetchGuestReservations(g.guest_id);
+                    setView("guestHistory");
+                }}
+            >
+                <td>{g.first_name}</td>
+                <td>{g.last_name}</td>
+                <td>{g.e_mail}</td>
+                <td>{g.phone_number}</td>
+                <td>{g.preferences}</td>
+            </tr>
+        ))
+    ) : (
+        <tr>
+            <td colSpan="5">Brak gości</td>
+        </tr>
+    )}
+</tbody>
                         </table>
                     )}
 
@@ -833,45 +889,7 @@ function App() {
                     </p>
                 </div>
             )}
-            {view === "adminRooms" && (
-                <div style={styles.section}>
-                    <h2>Lista pokoi</h2>
-
-                    {loading && <p>Ładowanie pokoi...</p>}
-                    {error && <p style={{ color: 'red' }}>Błąd: {error}</p>}
-
-                    <div style={styles.roomsGrid}>
-                        {rooms.map((room) => (
-                            <div key={room.room_id} style={styles.roomCard}>
-
-                                <img
-                                    src="https://images.unsplash.com/photo-1566665797739-1674de7a421a"
-                                    alt="Pokój"
-                                    style={styles.roomImage}
-                                />
-
-                                <h3>Pokój {room.room_number}</h3>
-                                <p>Typ: {room.room_type}</p>
-                                <p>Cena: {room.price_per_night} PLN</p>
-
-                                <p style={{
-                                    color: room.status === "available" ? "green" : "red"
-                                }}>
-                                    {room.status}
-                                </p>
-
-                            </div>
-                        ))}
-                    </div>
-
-                    <button
-                        style={styles.link}
-                        onClick={goBack}
-                    >
-                        ← Powrót
-                    </button>
-                </div>
-            )}
+            
             {view === "adminReservations" && (
                 <div style={styles.section}>
                     <h2>Rezerwacje</h2>
@@ -889,14 +907,20 @@ function App() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {reservations.map((r) => (
-                                    <tr key={r.reservation_id}>
-                                        <td>{r.reservation_id}</td>
-                                        <td>{r.start_date}</td>
-                                        <td>{r.end_date}</td>
-                                        <td>{r.status}</td>
+                                {Array.isArray(reservations) && reservations.length > 0 ? (
+                                    reservations.map((r) => (
+                                        <tr key={r.reservation_id}>
+                                            <td>{r.reservation_id}</td>
+                                            <td>{r.start_date}</td>
+                                            <td>{r.end_date}</td>
+                                            <td>{r.status}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="4">Brak rezerwacji</td>
                                     </tr>
-                                ))}
+                                )}
                             </tbody>
                         </table>
                     )}
@@ -1234,6 +1258,95 @@ function App() {
 
                     {!paymentsLoading && payments.length === 0 && (
                         <p>Brak płatności</p>
+                    )}
+
+                    <button style={styles.link} onClick={goBack}>
+                        ← Powrót
+                    </button>
+                </div>
+            )}
+            {view === "guestHistory" && selectedGuest && (
+                <div style={styles.section}>
+                    <h2>
+                        Historia pobytu: {selectedGuest.first_name} {selectedGuest.last_name}
+                    </h2>
+
+                    {reservationsLoading && <p>Ładowanie...</p>}
+
+                    {!reservationsLoading && (
+                        <table style={styles.table}>
+                            <thead>
+                                <tr>
+                                    <th>ID rezerwacji</th>
+                                    <th>Data od</th>
+                                    <th>Data do</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {Array.isArray(reservations) && reservations.length > 0 ? (
+                                    reservations.map((r) => (
+                                        <tr key={r.reservation_id}>
+                                            <td>{r.reservation_id}</td>
+                                            <td>{r.start_date}</td>
+                                            <td>{r.end_date}</td>
+                                            <td>{r.status}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="4">Brak rezerwacji</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    )}
+
+                    <button
+                        style={styles.link}
+                        onClick={() => setView("adminGuests")}
+                    >
+                        ← Powrót
+                    </button>
+                </div>
+            )}
+            {view === "adminStaff" && (
+                <div style={styles.section}>
+                    <h2>Pracownicy</h2>
+
+                    {employeesLoading && <p>Ładowanie...</p>}
+
+                    {!employeesLoading && (
+                        <table style={styles.table}>
+                            <thead>
+                                <tr>
+                                    <th>Imię</th>
+                                    <th>Nazwisko</th>
+                                    <th>Email</th>
+                                    <th>Telefon</th>
+                                    <th>Stanowisko</th>
+                                    <th>Dokument</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {employees.length > 0 ? (
+                                    employees.map((e) => (
+                                        <tr key={e.employee_id}>
+                                            <td>{e.first_name}</td>
+                                            <td>{e.last_name}</td>
+                                            <td>{e.e_mail}</td>
+                                            <td>{e.phone_number}</td>
+                                            <td>{e.position}</td>
+                                            <td>{e.document_number}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="6">Brak pracowników</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
                     )}
 
                     <button style={styles.link} onClick={goBack}>
