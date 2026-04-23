@@ -7,6 +7,10 @@ from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
 
+from endpoints import other_endpoints
+from endpoints import room_endpoints
+from endpoints import guest_endpoints
+
 # 1. Wczytanie konfiguracji z pliku .env
 load_dotenv()
 
@@ -41,104 +45,8 @@ def get_db_connection():
 # --- MODELE DANYCH (Pydantic) ---
 # Definiują, jakich danych backend oczekuje od Reacta przy dodawaniu (POST)
 
-class GuestCreate(BaseModel):
-    first_name: str
-    last_name: str
-    pesel: Optional[str] = None
-    phone_number: Optional[str] = None
-    e_mail: Optional[str] = None
-    preferences: Optional[str] = None
-
-
 # --- ENDPOINTY (Trasy API) ---
 
-@app.get("/")
-def home():
-    return {"message": "Serwer hotelowy działa!", "status": "online"}
-
-# --- POKOJE ---
-
-@app.get("/rooms")
-def get_rooms():
-    """Pobiera listę wszystkich pokoi"""
-    conn = get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=500, detail="Brak połączenia z bazą danych")
-    
-    try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        # Sortujemy po właściwej nazwie kolumny z Twojej bazy (room_id)
-        cur.execute("SELECT * FROM Room ORDER BY room_id;")
-        rooms = cur.fetchall()
-        cur.close()
-        conn.close()
-        return rooms
-    except Exception as e:
-        print(f"Błąd SQL: {e}")
-        if conn:
-            conn.close()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# --- GOŚCIE ---
-
-@app.get("/guests")
-def get_guests():
-    """Pobiera listę wszystkich gości"""
-    conn = get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=500, detail="Brak połączenia z bazą danych")
-    
-    try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT * FROM Guest ORDER BY guest_id;")
-        guests = cur.fetchall()
-        cur.close()
-        conn.close()
-        return guests
-    except Exception as e:
-        print(f"Błąd SQL: {e}")
-        if conn:
-            conn.close()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/guests")
-def add_guest(guest: GuestCreate):
-    """Dodaje nowego gościa do bazy"""
-    conn = get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=500, detail="Brak połączenia z bazą danych")
-    
-    try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        # Dodajemy gościa i od razu zwracamy jego wygenerowane guest_id
-        cur.execute("""
-            INSERT INTO Guest (first_name, last_name, pesel, phone_number, e_mail, preferences) 
-            VALUES (%s, %s, %s, %s, %s, %s) 
-            RETURNING guest_id;
-        """, (
-            guest.first_name, 
-            guest.last_name, 
-            guest.pesel, 
-            guest.phone_number, 
-            guest.e_mail, 
-            guest.preferences
-        ))
-        
-        new_id = cur.fetchone()['guest_id']
-        conn.commit() # Zatwierdzamy zmiany w bazie
-        cur.close()
-        conn.close()
-        
-        return {
-            "status": "success", 
-            "guest_id": new_id, 
-            "message": f"Pomyślnie dodano gościa: {guest.first_name} {guest.last_name}"
-        }
-    except Exception as e:
-        print(f"Błąd SQL: {e}")
-        if conn:
-            conn.rollback() # Cofa operację w razie błędu
-            conn.close()
-        raise HTTPException(status_code=500, detail=str(e))
+other_endpoints.loadEndpoints(app)
+room_endpoints.loadEndpoints(app)
+guest_endpoints.loadEndpoints(app)
