@@ -1,70 +1,63 @@
-# --- Guest API endpoints
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from psycopg2.extras import RealDictCursor
-from db_connection import get_db_connection
-from data_models import GuestCreate
+from database import get_db
+import schemas
 
-def loadEndpoints(app: FastAPI):
+router = APIRouter(
+    prefix="/guests",
+    tags=["Guests"]
+)
 
-    # --- fetch all guests
-    @app.get("/guests")
-    def get_guests():
-        """Pobiera listę wszystkich gości"""
-        conn = get_db_connection()
-        if not conn:
-            raise HTTPException(status_code=500, detail="Brak połączenia z bazą danych")
-        
-        try:
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("SELECT * FROM Guest ORDER BY guest_id;")
-            guests = cur.fetchall()
-            cur.close()
-            conn.close()
-            return guests
-        except Exception as e:
-            print(f"Błąd SQL: {e}")
-            if conn:
-                conn.close()
-            raise HTTPException(status_code=500, detail=str(e))
-        
+@router.get("/", response_model=list[schemas.GuestWithEmailResponse])
+def get_guests(conn = Depends(get_db)):
+    """Pobiera listę wszystkich gości połączonych z emailem z konta"""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        # TUTAJ JEST TWOJE UPRAGNIONE ZŁĄCZENIE (JOIN)
+        cur.execute("""
+            SELECT 
+                g.guest_id, 
+                g.first_name, 
+                g.last_name, 
+                g.pesel, 
+                g.phone_number, 
+                g.preferences,
+                a.email 
+            FROM Guest g
+            LEFT JOIN Account a ON g.guest_id = a.guest_id
+            ORDER BY g.guest_id;
+        """)
+        guests = cur.fetchall()
+        return guests
+    except Exception as e:
+        print(f"Błąd SQL: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
 
-    # --- create a new guest
-    @app.post("/guests")
-    def add_guest(guest: GuestCreate):
-        """Dodaje nowego gościa do bazy"""
-        conn = get_db_connection()
-        if not conn:
-            raise HTTPException(status_code=500, detail="Brak połączenia z bazą danych")
+@router.post("/", response_model=schemas.GuestResponse)
+def add_guest(guest: schemas.GuestCreate, conn = Depends(get_db)):
+    """Dodaje nowego gościa do bazy (bez tworzenia konta)"""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO Guest (first_name, last_name, pesel, phone_number, preferences) 
+            VALUES (%s, %s, %s, %s, %s) 
+            RETURNING guest_id, first_name, last_name, pesel, phone_number, preferences;
+        """, (
+            guest.first_name, 
+            guest.last_name, 
+            guest.pesel, 
+            guest.phone_number, 
+            guest.preferences
+        ))
         
-        try:
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            # Dodajemy gościa i od razu zwracamy jego wygenerowane guest_id
-            cur.execute("""
-                INSERT INTO Guest (first_name, last_name, pesel, phone_number, e_mail, preferences) 
-                VALUES (%s, %s, %s, %s, %s, %s) 
-                RETURNING guest_id;
-            """, (
-                guest.first_name, 
-                guest.last_name, 
-                guest.pesel, 
-                guest.phone_number, 
-                guest.e_mail, 
-                guest.preferences
-            ))
-            
-            new_id = cur.fetchone()['guest_id'] # pyright: ignore[reportOptionalSubscript]
-            conn.commit() # Zatwierdzamy zmiany w bazie
-            cur.close()
-            conn.close()
-            
-            return {
-                "status": "success", 
-                "guest_id": new_id, 
-                "message": f"Pomyślnie dodano gościa: {guest.first_name} {guest.last_name}"
-            }
-        except Exception as e:
-            print(f"Błąd SQL: {e}")
-            if conn:
-                conn.rollback() # Cofa operację w razie błędu
-                conn.close()
-            raise HTTPException(status_code=500, detail=str(e))
+        new_guest = cur.fetchone()
+        conn.commit()
+        return new_guest
+    except Exception as e:
+        conn.rollback()
+        print(f"Błąd SQL: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()

@@ -1,8 +1,12 @@
-# --- defines a method used to fetch a database connection object
 import os
 import psycopg2
+from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
 
-def get_db_connection():
+load_dotenv()
+
+def get_db():
+    conn = None
     try:
         conn = psycopg2.connect(
             host=os.getenv("DB_HOST"),
@@ -12,7 +16,10 @@ def get_db_connection():
             port=os.getenv("DB_PORT"),
             sslmode="require"
         )
-        return conn
+        yield conn
     except Exception as e:
-        print(f"Błąd połączenia z bazą: {e}")
-        return None
+        print(f"Krytyczny błąd bazy: {e}")
+        raise
+    finally:
+        if conn:
+            conn.close()

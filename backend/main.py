@@ -1,21 +1,12 @@
-import os
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
+from core.config import settings
+from routers import rooms, guests
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version="1.0.0"
+)
 
-from endpoints import other_endpoints
-from endpoints import room_endpoints
-from endpoints import guest_endpoints
-
-# 1. Wczytanie konfiguracji z pliku .env
-load_dotenv()
-
-# 2. Inicjalizacja aplikacji FastAPI
-app = FastAPI(title="Hotel System API")
-
-# 3. Konfiguracja CORS - żeby React mógł rozmawiać z Pythonem
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,13 +15,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 4. Funkcja łącząca z bazą danych na Azure
+app.include_router(rooms.router)
+app.include_router(guests.router)
 
-# --- MODELE DANYCH (Pydantic) ---
-# Definiują, jakich danych backend oczekuje od Reacta przy dodawaniu (POST)
+@app.get("/", tags=["Health Check"])
+def root():
+    """Endpoint sprawdzający czy system zyje"""
+    return {
+        "status": "running",
+        "project_name": settings.PROJECT_NAME,
+        "docs_url": "/docs"
+    }
 
-# --- ENDPOINTY (Trasy API) ---
-
-other_endpoints.loadEndpoints(app)
-room_endpoints.loadEndpoints(app)
-guest_endpoints.loadEndpoints(app)
+if __name__ == "__main__":
+    import uvicorn
+    # Odpalanie serwera ręcznie, jeśli nie używasz komendy w terminalu.
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
