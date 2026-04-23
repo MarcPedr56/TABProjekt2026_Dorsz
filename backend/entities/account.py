@@ -2,14 +2,14 @@
 from permissions import PermissionLevel
 
 class Account:
-    accountId: int
-    permissionLevel: PermissionLevel
-    phoneNumber: str
+    account_id: int
+    permission_level: PermissionLevel
+    phone_number: str
     email: str
 
-    def __init__(self, phoneNumber: str, email: str):
-        self.permissionLevel = PermissionLevel.USER
-        self.phoneNumber = phoneNumber
+    def __init__(self, phone_number: str, email: str):
+        self.permission_level = PermissionLevel.USER
+        self.phone_number = phone_number
         self.email = email
 
     

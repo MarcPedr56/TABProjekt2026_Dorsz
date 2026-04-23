@@ -1,16 +1,16 @@
 # --- Guest entity class file
 
 class Guest:
-    guestId: int
-    firstName: str
-    lastName: str
+    guest_id: int
+    first_name: str
+    last_name: str
     pesel: str
-    phoneNumber: str
+    phone_number: str
     email: str
 
-    def __init__(self, firstName: str, lastName: str, pesel:str, phoneNumber: str, email:str):
-        self.firstName = firstName
-        self.lastName = lastName
+    def __init__(self, first_name: str, last_name: str, pesel:str, phone_number: str, email:str):
+        self.first_name = first_name
+        self.last_name = last_name
         self.pesel = pesel
-        self.phoneNumber = phoneNumber
+        self.phone_number = phone_number
         self.email = email

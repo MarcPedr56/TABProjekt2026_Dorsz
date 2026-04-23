@@ -25,20 +25,6 @@ app.add_middleware(
 )
 
 # 4. Funkcja łącząca z bazą danych na Azure
-def get_db_connection():
-    try:
-        conn = psycopg2.connect(
-            host=os.getenv("DB_HOST"),
-            database=os.getenv("DB_NAME"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"),
-            port=os.getenv("DB_PORT"),
-            sslmode="require"
-        )
-        return conn
-    except Exception as e:
-        print(f"Błąd połączenia z bazą: {e}")
-        return None
 
 # --- MODELE DANYCH (Pydantic) ---
 # Definiują, jakich danych backend oczekuje od Reacta przy dodawaniu (POST)
