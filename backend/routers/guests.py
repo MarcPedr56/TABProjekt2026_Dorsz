@@ -13,7 +13,6 @@ def get_guests(conn = Depends(get_db)):
     """Pobiera listę wszystkich gości połączonych z emailem z konta"""
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        # TUTAJ JEST TWOJE UPRAGNIONE ZŁĄCZENIE (JOIN)
         cur.execute("""
             SELECT 
                 g.guest_id, 

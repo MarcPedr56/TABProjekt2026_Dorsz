@@ -3,7 +3,7 @@ from fastapi import HTTPException, Depends, status
 def get_current_user():
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED, 
-        detail="Autoryzacja JWT nie jest jeszcze zaimplementowana. Napisz auth.py!"
+        detail="Do zrobienia"
     )
 
 def require_admin(current_user: dict = Depends(get_current_user)):

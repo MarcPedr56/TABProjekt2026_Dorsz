@@ -6,7 +6,6 @@ from datetime import date, datetime
 # KONFIGURACJA BAZOWA
 # ==========================
 class BaseSchema(BaseModel):
-    # W Pydantic V2 to zastępuje dawne class Config: orm_mode = True
     model_config = ConfigDict(from_attributes=True)
 
 # ==========================
@@ -68,7 +67,6 @@ class AccountResponse(AccountBase):
     created_at: datetime
     guest_id: Optional[int] = None
     employee_id: Optional[int] = None
-    # Nigdy nie zwracamy password_hash!
 
 # ==========================
 # WIDOKI ZŁĄCZONE (JOIN) - DLA FRONTENDU
@@ -78,7 +76,7 @@ class GuestWithEmailResponse(GuestResponse):
 
 class EmployeeWithEmailResponse(EmployeeResponse):
     email: EmailStr
-    role_name: str # Z tabeli Role
+    role_name: str
 
 # ==========================
 # 5. POKÓJ (Room)

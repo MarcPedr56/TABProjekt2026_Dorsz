@@ -112,7 +112,7 @@ function App() {
 
         setPaymentsLoading(true);
 
-        fetch(`http://127.0.0.1:8000/payments/${searchPesel}`)
+        fetch(`http://127.0.0.1:8000/payments/pesel/${searchPesel}`)
             .then(res => res.json())
             .then(data => {
                 setPayments(data);
@@ -164,7 +164,7 @@ function App() {
 
         setPaymentsLoading(true);
 
-        fetch(`http://127.0.0.1:8000/payments/user/${user.email}`)
+        fetch(`http://127.0.0.1:8000/payments/pesel/${searchPesel}`)
             .then(res => res.json())
             .then(data => {
                 setPayments(Array.isArray(data) ? data : []);
@@ -1334,7 +1334,7 @@ function App() {
                                         <tr key={e.employee_id}>
                                             <td>{e.first_name}</td>
                                             <td>{e.last_name}</td>
-                                            <td>{e.e_mail}</td>
+                                            <td>{e.email}</td>
                                             <td>{e.phone_number}</td>
                                             <td>{e.position}</td>
                                             <td>{e.document_number}</td>
