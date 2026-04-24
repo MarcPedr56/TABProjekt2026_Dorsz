@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
-from routers import rooms, guests
+from routers import rooms, guests, payments 
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="1.0.0"
@@ -15,8 +16,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Podpinanie wszystkich routerów!
 app.include_router(rooms.router)
 app.include_router(guests.router)
+app.include_router(payments.router)
 
 @app.get("/", tags=["Health Check"])
 def root():
@@ -29,5 +32,4 @@ def root():
 
 if __name__ == "__main__":
     import uvicorn
-    # Odpalanie serwera ręcznie, jeśli nie używasz komendy w terminalu.
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
