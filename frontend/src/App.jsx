@@ -2,7 +2,11 @@ import { useState, useEffect } from 'react'
 import './App.css'
 
 function App() {
+ 
+    const API = "http://127.0.0.1:8000";
     const [rooms, setRooms] = useState([]);
+    const [loginEmail, setLoginEmail] = useState("");
+    const [loginPassword, setLoginPassword] = useState("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [role, setRole] = useState(null); 
@@ -21,7 +25,9 @@ function App() {
         pesel: "",
         phone: "",
         email: "",
-        preferences: ""
+        preferences: "",
+        password: "",
+        confirmPassword: ""
     });
     const [payments, setPayments] = useState([]);
     const [paymentsLoading, setPaymentsLoading] = useState(false);
@@ -34,6 +40,11 @@ function App() {
         quantity: "",
         reservationId: ""
     });
+    const statusLabel = {
+        available: "Dostępny",
+        occupied: "Zajęty",
+        reserved: "Zarezerwowany"
+    };
     const handleServiceChange = (e) => {
         setServiceForm({
             ...serviceForm,
@@ -60,9 +71,14 @@ function App() {
     const fetchEmployees = () => {
         setEmployeesLoading(true);
 
-        fetch("http://127.0.0.1:8000/employees")
+        fetch("http://127.0.0.1:8000/employees", {
+            headers: {
+                Authorization: `Bearer ${localStorage.getItem("token")}`
+            }
+        })
             .then(res => res.json())
             .then(data => {
+                console.log("EMPLOYEES:", data);
                 setEmployees(Array.isArray(data) ? data : []);
                 setEmployeesLoading(false);
             })
@@ -91,7 +107,7 @@ function App() {
         fetch("http://127.0.0.1:8000/guests")
             .then(res => res.json())
             .then(data => {
-                setGuests(data);
+                setGuests(Array.isArray(data) ? data : []);
                 setGuestsLoading(false);
             })
             .catch(() => setGuestsLoading(false));
@@ -114,7 +130,9 @@ function App() {
 
         fetch(`http://127.0.0.1:8000/payments/pesel/${searchPesel}`)
             .then(res => res.json())
+            
             .then(data => {
+                console.log("PAYMENTS:", data);
                 setPayments(data);
                 setPaymentsLoading(false);
             })
@@ -124,7 +142,8 @@ function App() {
         if (!role) setView("dashboard");
         else if (role === "admin") setView("admin");
         else if (role === "reception") setView("reception");
-        else setView("account");
+        else if (role === "guest") setView("account");
+        else setView("dashboard");
     };
     const fetchMyReservations = () => {
         if (!user || !user.email) return;
@@ -135,7 +154,7 @@ function App() {
             .then(res => res.json())
             .then(data => {
                 if (Array.isArray(data)) {
-                    setReservations(data);
+                    setReservations(Array.isArray(data) ? data : []);
                 } else {
                     setReservations([]);
                 }
@@ -149,15 +168,18 @@ function App() {
         fetch(`http://127.0.0.1:8000/services/user/${user.email}`)
             .then(res => res.json())
             .then(data => {
+                console.log("SERVICES:", data);
+
                 if (Array.isArray(data)) {
                     setMyServices(data);
                 } else {
-                    setMyServices([]); 
-                    console.log("Niepoprawne dane usług:", data);
+                    setMyServices([]);
                 }
             })
-
-            .catch(() => setMyServices([]));
+            .catch((err) => {
+                console.error("Błąd usług:", err);
+                setMyServices([]);
+            });
     };
     const fetchMyPayments = () => {
         if (!user || !user.email) return;
@@ -184,6 +206,38 @@ function App() {
         }
         return "https://images.unsplash.com/photo-1566073771259-6a8506099945";
     };
+    const addGuest = async () => {
+        try {
+            const res = await fetch("http://127.0.0.1:8000/guests", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    first_name: form.first_name,
+                    last_name: form.last_name,
+                    pesel: form.pesel,
+                    phone_number: form.phone,
+                    preferences: form.preferences
+                })
+            });
+
+            const data = await res.json();
+            console.log("NEW GUEST:", data);
+
+            if (!res.ok) {
+                alert("Błąd dodawania gościa");
+                return;
+            }
+
+            alert("Dodano gościa");
+            fetchGuests();
+
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     const styles = {
         page: {
             fontFamily: "Georgia, sans-serif",
@@ -476,11 +530,13 @@ function App() {
                                 <h3>Pokój {room.room_number}</h3>
                                 <p>Typ: {room.room_type}</p>
                                 <p>Cena: {room.price_per_night} PLN</p>
+                                <p>Piętro: {room.floor_number}</p>
+                                <p>Wyposażenie: {room.equipment}</p>
 
                                 <p style={{
                                     color: room.status === "available" ? "green" : "red"
                                 }}>
-                                    {room.status}
+                                    {statusLabel[room.status] || room.status}
                                 </p>
 
                                 <button
@@ -607,26 +663,59 @@ function App() {
             {view === "login" && (
                 <div style={styles.card}>
                     <h2>Logowanie</h2>
-                    <input placeholder="Email" style={styles.input} />
-                    <input type="password" placeholder="Hasło" style={styles.input} />
+                    <input
+                        placeholder="Email"
+                        style={styles.input}
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                    />
+
+                    <input
+                        type="password"
+                        placeholder="Hasło"
+                        style={styles.input}
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                    />
 
                     <button
-                        onClick={() => {
-                            // MOCK LOGIKA
-                            const email = document.querySelector("input[placeholder='Email']").value;
+                        onClick={async () => {
+                            const email = loginEmail;
+                            const password = loginPassword;
 
-                            if (email === "admin@test.com") {
-                                setRole("admin");
+                            const formData = new URLSearchParams();
+                            formData.append("username", email);
+                            formData.append("password", password);
+
+                            try {
+                                const res = await fetch("http://127.0.0.1:8000/auth/login", {
+                                    method: "POST",
+                                    body: formData
+                                });
+
+                                const data = await res.json();
+
+                                console.log("LOGIN:", data);
+
+                                if (!res.ok) {
+                                    alert(data.detail || "Błąd logowania");
+                                    return;
+                                }
+
+                                // zapis tokena
+                                localStorage.setItem("token", data.access_token);
+
+                                setRole(data.role);
                                 setUser({ email });
-                                setView("admin");
-                            } else if (email === "recepcja@test.com") {
-                                setRole("reception");
-                                setUser({ email });
-                                setView("reception");
-                            } else {
-                                setRole("user");
-                                setUser({ email }); // 🔥 KLUCZOWE
-                                setView("account");
+
+                                if (data.role === "admin") setView("admin");
+                                else if (data.role === "reception") setView("reception");
+                                else if (data.role === "guest") setView("account");
+                                else setView("dashboard");
+
+                            } catch (err) {
+                                console.error(err);
+                                alert("Błąd połączenia z backendem");
                             }
                         }}
                     >
@@ -658,7 +747,16 @@ function App() {
                             <h3>Moje rezerwacje</h3>
                             <p>Zobacz i zarządzaj swoimi rezerwacjami</p>
                         </div>
-
+                        <div
+                            style={styles.accountCard}
+                            onClick={() => {
+                                fetchMyServices();
+                                setView("myServices");
+                            }}
+                        >
+                            <h3>Moje usługi</h3>
+                            <p>Zobacz historię usług</p>
+                        </div>
                         <div
                             style={styles.accountCard}
                             onClick={() => {
@@ -779,6 +877,7 @@ function App() {
                                 <tr>
                                     <th>Imię</th>
                                     <th>Nazwisko</th>
+                                    <th>PESEL</th>
                                     <th>Email</th>
                                     <th>Telefon</th>
                                     <th>Preferencje</th>
@@ -798,7 +897,8 @@ function App() {
             >
                 <td>{g.first_name}</td>
                 <td>{g.last_name}</td>
-                <td>{g.e_mail}</td>
+                <td>{g.pesel}</td>
+                <td>{g.email}</td>
                 <td>{g.phone_number}</td>
                 <td>{g.preferences}</td>
             </tr>
@@ -871,11 +971,73 @@ function App() {
                         onChange={handleChange}
                     />
 
+                    <input
+                        name="password"
+                        type="password"
+                        placeholder="Hasło"
+                        style={styles.input}
+                        value={form.password}
+                        onChange={handleChange}
+                    />
+
+                    <input
+                        name="confirmPassword"
+                        type="password"
+                        placeholder="Powtórz hasło"
+                        style={styles.input}
+                        value={form.confirmPassword}
+                        onChange={handleChange}
+                    />
+
                     <button
                         style={styles.button}
-                        onClick={() => {
-                            console.log("Dane rejestracji:", form);
-                            setView("login");
+                        onClick={async () => {
+
+                            if (form.password !== form.confirmPassword) {
+                                alert("Hasła nie są takie same!");
+                                return;
+                            }
+
+                            if (form.password.length < 6) {
+                                alert("Hasło musi mieć min. 6 znaków");
+                                return;
+                            }
+
+                            try {
+                                const res = await fetch("http://127.0.0.1:8000/auth/register", {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        user_in: {
+                                            email: form.email,
+                                            password: form.password
+                                        },
+                                        guest_in: {
+                                            first_name: form.first_name,
+                                            last_name: form.last_name,
+                                            pesel: form.pesel,
+                                            phone_number: form.phone,
+                                            preferences: form.preferences
+                                        }
+                                    })
+                                });
+
+                                const data = await res.json();
+
+                                if (!res.ok) {
+                                    alert(data.detail || "Błąd rejestracji");
+                                    return;
+                                }
+
+                                alert("Rejestracja OK");
+                                setView("login");
+
+                            } catch (err) {
+                                console.error(err);
+                                alert("Błąd połączenia");
+                            }
                         }}
                     >
                         Zarejestruj
@@ -901,6 +1063,8 @@ function App() {
                             <thead>
                                 <tr>
                                     <th>ID</th>
+                                    <th>Pokój</th>
+                                    <th>Gość</th>
                                     <th>Data od</th>
                                     <th>Data do</th>
                                     <th>Status</th>
@@ -911,6 +1075,8 @@ function App() {
                                     reservations.map((r) => (
                                         <tr key={r.reservation_id}>
                                             <td>{r.reservation_id}</td>
+                                            <td>{r.room_id}</td>
+                                            <td>{r.main_guest_id}</td>
                                             <td>{r.start_date}</td>
                                             <td>{r.end_date}</td>
                                             <td>{r.status}</td>
@@ -1053,6 +1219,9 @@ function App() {
                                     <th>Metoda</th>
                                     <th>Status</th>
                                     <th>Data</th>
+                                    <th>Typ</th>
+                                    <th>Faktura</th>
+                                    <th>Rezerwacja</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1063,6 +1232,9 @@ function App() {
                                         <td>{p.method}</td>
                                         <td>{p.status}</td>
                                         <td>{p.payment_date}</td>
+                                        <td>{p.type}</td>
+                                        <td>{p.invoice_number}</td>
+                                        <td>{p.reservation_id}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -1178,6 +1350,7 @@ function App() {
                                 <th>Data od</th>
                                 <th>Data do</th>
                                 <th>Status</th>
+                                <th>Pokój</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1187,6 +1360,7 @@ function App() {
                                     <td>{r.start_date}</td>
                                     <td>{r.end_date}</td>
                                     <td>{r.status}</td>
+                                    <td>{r.room_id}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -1325,11 +1499,11 @@ function App() {
                                     <th>Email</th>
                                     <th>Telefon</th>
                                     <th>Stanowisko</th>
-                                    <th>Dokument</th>
+                                    <th>Rola</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {employees.length > 0 ? (
+                                {Array.isArray(employees) && employees.length > 0 ? (
                                     employees.map((e) => (
                                         <tr key={e.employee_id}>
                                             <td>{e.first_name}</td>
@@ -1338,6 +1512,7 @@ function App() {
                                             <td>{e.phone_number}</td>
                                             <td>{e.position}</td>
                                             <td>{e.document_number}</td>
+                                            <td>{e.role_name}</td>
                                         </tr>
                                     ))
                                 ) : (

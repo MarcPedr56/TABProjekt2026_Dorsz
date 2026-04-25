@@ -54,7 +54,7 @@ class EmployeeResponse(EmployeeBase):
 # ==========================
 class AccountBase(BaseSchema):
     email: EmailStr
-    role_id: int
+    #role_id: int
     is_active: bool = True
 
 class AccountCreate(AccountBase):
@@ -202,3 +202,8 @@ class TaskExecutionCreate(TaskExecutionBase):
 
 class TaskExecutionResponse(TaskExecutionBase):
     execution_date: datetime
+
+
+class RegisterRequest(BaseModel):
+    user_in: AccountCreate
+    guest_in: GuestCreate
