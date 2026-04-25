@@ -68,3 +68,20 @@ def get_payments_by_pesel(pesel: str, conn = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Błąd bazy danych podczas wyszukiwania")
     finally:
         cur.close()
+
+@router.get("/pesel/{reservation_id}", response_model=list[schemas.PaymentResponse])
+def get_payments_by_reservation_id(reservation_id: int, conn = Depends(get_db)):
+    """Wyszukuje płatności powiązane z konkretnym id rezerwacji"""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT p.* FROM Payment p
+            WHERE p.reservation_id = %d
+            ORDER BY p.payment_date DESC;
+        """, (reservation_id,))
+        return cur.fetchall()
+    except Exception as e:
+        print(f"Błąd SQL: {e}")
+        raise HTTPException(status_code=500, detail="Błąd bazy danych podczas wyszukiwania")
+    finally:
+        cur.close()
