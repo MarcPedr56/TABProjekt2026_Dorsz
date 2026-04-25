@@ -69,6 +69,13 @@ class AccountResponse(AccountBase):
     employee_id: Optional[int] = None
 
 # ==========================
+# Nakładka do register_guest
+# ==========================
+class RegisterRequest(BaseModel):
+    user_in: AccountCreate
+    guest_in: GuestCreate
+
+# ==========================
 # WIDOKI ZŁĄCZONE (JOIN) - DLA FRONTENDU
 # ==========================
 class GuestWithEmailResponse(GuestResponse):
@@ -202,8 +209,3 @@ class TaskExecutionCreate(TaskExecutionBase):
 
 class TaskExecutionResponse(TaskExecutionBase):
     execution_date: datetime
-
-
-class RegisterRequest(BaseModel):
-    user_in: AccountCreate
-    guest_in: GuestCreate
