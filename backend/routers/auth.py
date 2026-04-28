@@ -28,6 +28,9 @@ def register_guest(data: schemas.RegisterRequest, conn = Depends(get_db)):
         new_guest_id = cur.fetchone()['guest_id']
 
         hashed_pw = get_password_hash(user_in.password)
+        print("HASLO:", user_in.password)
+        print("HASH:", hashed_pw)
+        print("LEN:", len(hashed_pw))
         cur.execute("""
             INSERT INTO Account (email, password_hash, role_id, guest_id)
             VALUES (%s, %s, (SELECT role_id FROM Role WHERE name='guest'), %s) RETURNING account_id;

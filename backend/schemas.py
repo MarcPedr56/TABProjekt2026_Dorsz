@@ -53,7 +53,7 @@ class EmployeeResponse(EmployeeBase):
 # 4. KONTO (Account)
 # ==========================
 class AccountBase(BaseSchema):
-    email: EmailStr
+    email: Optional[str] = None
     #role_id: int
     is_active: bool = True
 
@@ -69,21 +69,14 @@ class AccountResponse(AccountBase):
     employee_id: Optional[int] = None
 
 # ==========================
-# Nakładka do register_guest
-# ==========================
-class RegisterRequest(BaseModel):
-    user_in: AccountCreate
-    guest_in: GuestCreate
-
-# ==========================
 # WIDOKI ZŁĄCZONE (JOIN) - DLA FRONTENDU
 # ==========================
 class GuestWithEmailResponse(GuestResponse):
-    email: EmailStr
+    email: Optional[str] = None
 
 class EmployeeWithEmailResponse(EmployeeResponse):
-    email: EmailStr
-    role_name: str
+    email: Optional[str] = None
+    role_name: Optional[str] = None
 
 # ==========================
 # 5. POKÓJ (Room)
@@ -209,3 +202,16 @@ class TaskExecutionCreate(TaskExecutionBase):
 
 class TaskExecutionResponse(TaskExecutionBase):
     execution_date: datetime
+
+
+class RegisterRequest(BaseModel):
+    user_in: AccountCreate
+    guest_in: GuestCreate
+
+
+
+class ReservationCreate(BaseModel):
+    room_id: int
+    start_date: date
+    end_date: date
+    email: str

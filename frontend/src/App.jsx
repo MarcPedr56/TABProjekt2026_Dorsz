@@ -5,14 +5,25 @@ function App() {
  
     const API = "http://127.0.0.1:8000";
     const [rooms, setRooms] = useState([]);
+    const [roomForm, setRoomForm] = useState({
+        startDate: "",
+        endDate: ""
+    });
+    const [selectedReservation, setSelectedReservation] = useState(null);
+    const [tasks, setTasks] = useState([]);
+    const [tasksLoading, setTasksLoading] = useState(false);
     const [loginEmail, setLoginEmail] = useState("");
     const [loginPassword, setLoginPassword] = useState("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [role, setRole] = useState(null); 
     const [view, setView] = useState("dashboard");
+    const [bookingSuccess, setBookingSuccess] = useState(false);
+    const [bookingPrice, setBookingPrice] = useState(null);
+    const [selectedService, setSelectedService] = useState(null);
     const [selectedGuest, setSelectedGuest] = useState(null);
     const [reservations, setReservations] = useState([]);
+    const [reservationServices, setReservationServices] = useState([]);
     const [selectedRoom, setSelectedRoom] = useState(null);
     const [myServices, setMyServices] = useState([]);
     const [employees, setEmployees] = useState([]);
@@ -40,6 +51,14 @@ function App() {
         quantity: "",
         reservationId: ""
     });
+    const servicesData = [
+        { id: 1, name: "Spa", price: "150 PLN" },
+        { id: 2, name: "Basen", price: "50 PLN" },
+        { id: 3, name: "Parking", price: "120 PLN" },
+        { id: 4, name: "Restauracja", price: "10 PLN" },
+        { id: 5, name: "Pralnia", price: "20 PLN" },
+        { id: 6, name: "Sala konferencyjna", price: "300 PLN" }
+    ];
     const statusLabel = {
         available: "Dostępny",
         occupied: "Zajęty",
@@ -51,6 +70,57 @@ function App() {
             [e.target.name]: e.target.value
         });
     };
+    const fetchTasks = () => {
+        setTasksLoading(true);
+
+        fetch("http://127.0.0.1:8000/tasks")
+            .then(res => res.json())
+            .then(data => {
+                console.log("TASKS:", data);
+                setTasks(Array.isArray(data) ? data : []);
+                setTasksLoading(false);
+            })
+            .catch(() => setTasksLoading(false));
+    };
+    const assignEmployee = (taskId, employeeId) => {
+        fetch("http://127.0.0.1:8000/tasks/assign", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                task_id: taskId,
+                employee_id: employeeId
+            })
+        })
+            .then(() => {
+                alert("Przypisano pracownika");
+            });
+    };
+    const updateTaskStatus = (taskId, status) => {
+        fetch(`http://127.0.0.1:8000/tasks/${taskId}/status`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ status })
+        })
+            .then(() => fetchTasks());
+    };
+    const calculateDays = () => {
+        if (!roomForm.startDate || !roomForm.endDate) return 0;
+
+        const start = new Date(roomForm.startDate);
+        const end = new Date(roomForm.endDate);
+
+        const diff = (end - start) / (1000 * 60 * 60 * 24);
+
+        return diff > 0 ? diff : 0;
+    };
+
+    const totalPrice =
+        selectedRoom ? calculateDays() * selectedRoom.price_per_night : 0;
+
     const fetchGuestReservations = (guestId) => {
         setReservationsLoading(true);
 
@@ -76,13 +146,29 @@ function App() {
                 Authorization: `Bearer ${localStorage.getItem("token")}`
             }
         })
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error("Błąd pobierania pracowników");
+                }
+                return res.json();
+            })
             .then(data => {
                 console.log("EMPLOYEES:", data);
-                setEmployees(Array.isArray(data) ? data : []);
+
+                if (Array.isArray(data)) {
+                    setEmployees(data);
+                } else {
+                    console.error("To nie tablica:", data);
+                    setEmployees([]);
+                }
+
                 setEmployeesLoading(false);
             })
-            .catch(() => setEmployeesLoading(false));
+            .catch((err) => {
+                console.error("ERROR:", err);
+                setEmployees([]);
+                setEmployeesLoading(false);
+            });
     };
     useEffect(() => {
         fetch('http://127.0.0.1:8000/rooms')
@@ -104,9 +190,14 @@ function App() {
     const fetchGuests = () => {
         setGuestsLoading(true);
 
-        fetch("http://127.0.0.1:8000/guests")
+        fetch("http://127.0.0.1:8000/guests", {
+            headers: {
+                Authorization: `Bearer ${localStorage.getItem("token")}`
+            }
+        })
             .then(res => res.json())
             .then(data => {
+                console.log("GUESTS:", data); // 🔥 dodaj debug
                 setGuests(Array.isArray(data) ? data : []);
                 setGuestsLoading(false);
             })
@@ -138,6 +229,20 @@ function App() {
             })
             .catch(() => setPaymentsLoading(false));
     };
+    const fetchReservationServices = (reservationId) => {
+        fetch(`${API}/services/reservation/${reservationId}`)
+            .then(res => res.json())
+            .then(data => {
+                console.log("RESERVATION SERVICES:", data);
+                setReservationServices(Array.isArray(data) ? data : []);
+            });
+    };
+    const calculatedPrice =
+        selectedService && serviceForm.quantity
+            ? Number(serviceForm.quantity) * parseFloat(selectedService.price)
+            : 0;
+
+
     const goBack = () => {
         if (!role) setView("dashboard");
         else if (role === "admin") setView("admin");
@@ -162,6 +267,45 @@ function App() {
             })
             .catch(() => setReservationsLoading(false));
     };
+    const cancelReservation = (id) => {
+        fetch(`${API}/reservations/${id}/cancel`, {
+            method: "PUT"
+        }).then(() => {
+            alert("Anulowano");
+            fetchReservations();
+            goBack();
+        });
+    };
+
+    const extendReservation = (id) => {
+        const newDate = prompt("Podaj nową datę końca (YYYY-MM-DD)");
+
+        fetch(`${API}/reservations/${id}/extend`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ end_date: newDate })
+        }).then(() => fetchReservations());
+    };
+
+    const shortenReservation = (id) => {
+        const newDate = prompt("Podaj nową krótszą datę końca");
+
+        fetch(`${API}/reservations/${id}/shorten`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ end_date: newDate })
+        }).then(() => fetchReservations());
+    };
+
+    const downloadConfirmation = (id) => {
+        window.open(`${API}/reservations/${id}/confirmation`);
+    };
+
+    const cancelService = (serviceId) => {
+        fetch(`${API}/services/${serviceId}/cancel`, {
+            method: "PUT"
+        }).then(() => fetchMyServices());
+    };
     const fetchMyServices = () => {
         if (!user || !user.email) return;
 
@@ -180,6 +324,10 @@ function App() {
                 console.error("Błąd usług:", err);
                 setMyServices([]);
             });
+    };
+    const getGuestName = (guestId) => {
+        const guest = guests.find(g => g.guest_id === guestId);
+        return guest ? `${guest.first_name} ${guest.last_name}` : "Brak danych";
     };
     const fetchMyPayments = () => {
         if (!user || !user.email) return;
@@ -236,6 +384,16 @@ function App() {
         } catch (err) {
             console.error(err);
         }
+    };
+    const updatePayment = (paymentId, data) => {
+        fetch(`http://127.0.0.1:8000/payments/${paymentId}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(data)
+        })
+            .then(() => fetchPayments());
     };
 
     const styles = {
@@ -568,15 +726,8 @@ function App() {
                     </p>
 
                     <div style={styles.servicesList}>
-                        {[
-                            { name: "Spa", price: "150 PLN" },
-                            { name: "Basen", price: "50 PLN" },
-                            { name: "Parking", price: "120 PLN" },
-                            { name: "Restauracja", price: "10 PLN" },
-                            { name: "Pralnia", price: "20 PLN" },
-                            { name: "Sala konferencyjna", price: "300 PLN" }
-                        ].map((service, index) => (
-                            <div key={index} style={styles.serviceItem}>
+                        {servicesData.map((service) => (
+                            <div key={service.id} style={styles.serviceItem}>
                                 <div>
                                     <strong>{service.name}</strong>
                                     <p style={{ margin: 0 }}>{service.price}</p>
@@ -587,6 +738,7 @@ function App() {
                                         style={styles.button}
                                         onClick={() => {
                                             if (role) {
+                                                setSelectedService(service);
                                                 setView("serviceBooking");
                                             } else {
                                                 setView("login");
@@ -603,8 +755,16 @@ function App() {
             )}
             {view === "serviceBooking" && (
                 <div style={styles.card}>
-                    <h2>Rezerwacja usługi</h2>
+                    <h3 style={{ marginBottom: "10px" }}>
+                        Usługa: {selectedService?.name}
+                    </h3>
 
+                    <p>
+                        Cena za sztukę: <strong>{selectedService?.price}</strong>
+                    </p>
+                    <p style={{ marginTop: "10px", fontSize: "16px" }}>
+                        Do zapłaty: <strong>{calculatedPrice} PLN</strong>
+                    </p>
                     <input
                         name="date"
                         type="date"
@@ -640,12 +800,35 @@ function App() {
 
                     <button
                         style={styles.button}
-                        onClick={() => {
-                            console.log("Rezerwacja usługi:", serviceForm);
+                        onClick={async () => {
+                            try {
+                                const res = await fetch("http://127.0.0.1:8000/services/book", {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        service_id: selectedService.id,
+                                        reservation_id: Number(serviceForm.reservationId),
+                                        quantity: Number(serviceForm.quantity || 1)
+                                    })
+                                });
 
-                            // później tutaj pójdzie fetch do backendu
+                                const data = await res.json();
 
-                            setView("services");
+                                if (!res.ok) {
+                                    alert("Błąd zapisu");
+                                    return;
+                                }
+
+                                setBookingPrice(data.actual_price);
+                                setBookingSuccess(true);
+
+
+                            } catch (err) {
+                                console.error(err);
+                                alert("Błąd połączenia");
+                            }
                         }}
                     >
                         Zarezerwuj
@@ -657,6 +840,44 @@ function App() {
                     >
                         ← Powrót
                     </button>
+                </div>
+            )}
+            {bookingSuccess && (
+                <div style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    background: "rgba(0,0,0,0.5)",
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    zIndex: 999
+                }}>
+                    <div style={{
+                        background: "#fff",
+                        padding: "30px",
+                        borderRadius: "12px",
+                        textAlign: "center",
+                        minWidth: "300px",
+                        boxShadow: "0 5px 20px rgba(0,0,0,0.2)"
+                    }}>
+                        <h2>Usługa zarezerwowana</h2>
+                        <p style={{ marginTop: "10px" }}>
+                            Koszt: <strong>{bookingPrice} PLN</strong>
+                        </p>
+
+                        <button
+                            style={{ ...styles.button, marginTop: "20px" }}
+                            onClick={() => {
+                                setBookingSuccess(false);
+                                setView("services");
+                            }}
+                        >
+                            OK
+                        </button>
+                    </div>
                 </div>
             )}
             {/* LOGIN */}
@@ -828,8 +1049,9 @@ function App() {
                             style={styles.accountCard}
                             onClick={() => setView("adminIssues")}
                         >
-                            <h3>Usterki</h3>
-                            <p>Zgłoszenia techniczne</p>
+                            <h3>Prace hotelowe</h3>
+                            <p>Zlecenie zadań pracownikom</p>
+                           
                         </div>
 
                         <div
@@ -1063,7 +1285,6 @@ function App() {
                             <thead>
                                 <tr>
                                     <th>ID</th>
-                                    <th>Pokój</th>
                                     <th>Gość</th>
                                     <th>Data od</th>
                                     <th>Data do</th>
@@ -1073,10 +1294,17 @@ function App() {
                             <tbody>
                                 {Array.isArray(reservations) && reservations.length > 0 ? (
                                     reservations.map((r) => (
-                                        <tr key={r.reservation_id}>
+                                        <tr
+                                            key={r.reservation_id}
+                                            style={{ cursor: "pointer" }}
+                                            onClick={() => {
+                                                setSelectedReservation(r);
+                                                fetchReservationServices(r.reservation_id);
+                                                setView("reservationDetails");
+                                            }}
+                                        >
                                             <td>{r.reservation_id}</td>
-                                            <td>{r.room_id}</td>
-                                            <td>{r.main_guest_id}</td>
+                                            <td>{getGuestName(r.main_guest_id)}</td>
                                             <td>{r.start_date}</td>
                                             <td>{r.end_date}</td>
                                             <td>{r.status}</td>
@@ -1216,12 +1444,10 @@ function App() {
                                 <tr>
                                     <th>ID płatności</th>
                                     <th>Kwota</th>
+                                    <th>Data</th>
+                                    <th>Rezerwacja</th>
                                     <th>Metoda</th>
                                     <th>Status</th>
-                                    <th>Data</th>
-                                    <th>Typ</th>
-                                    <th>Faktura</th>
-                                    <th>Rezerwacja</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1229,12 +1455,41 @@ function App() {
                                     <tr key={p.payment_id}>
                                         <td>{p.payment_id}</td>
                                         <td>{p.amount} PLN</td>
-                                        <td>{p.method}</td>
-                                        <td>{p.status}</td>
                                         <td>{p.payment_date}</td>
-                                        <td>{p.type}</td>
-                                        <td>{p.invoice_number}</td>
                                         <td>{p.reservation_id}</td>
+
+                                        {/* METODA */}
+                                        <td>
+                                            <select
+                                                value={p.method}
+                                                onChange={(e) =>
+                                                    updatePayment(p.payment_id, {
+                                                        method: e.target.value,
+                                                        status: p.status
+                                                    })
+                                                }
+                                            >
+                                                <option value="karta">Karta</option>
+                                                <option value="gotowka">Gotówka</option>
+                                                <option value="przelew">Przelew</option>
+                                            </select>
+                                        </td>
+
+                                        {/* STATUS */}
+                                        <td>
+                                            <select
+                                                value={p.status}
+                                                onChange={(e) =>
+                                                    updatePayment(p.payment_id, {
+                                                        method: p.method,
+                                                        status: e.target.value
+                                                    })
+                                                }
+                                            >
+                                                <option value="niezaplacone">Niezapłacone</option>
+                                                <option value="zaplacone">Zapłacone</option>
+                                            </select>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -1262,6 +1517,7 @@ function App() {
                         <div
                             style={styles.accountCard}
                             onClick={() => {
+                                fetchGuests();
                                 fetchReservations();
                                 setView("adminReservations");
                             }}
@@ -1309,24 +1565,62 @@ function App() {
                     <p><strong>Pokój:</strong> {selectedRoom.room_number}</p>
                     <p><strong>Typ:</strong> {selectedRoom.room_type}</p>
                     <p><strong>Cena:</strong> {selectedRoom.price_per_night} PLN</p>
+                    <p>
+                        Liczba dni: <strong>{calculateDays()}</strong>
+                    </p>
 
+                    <p>
+                        Do zapłaty: <strong>{totalPrice} PLN</strong>
+                    </p>
                     <input
                         type="date"
                         style={styles.input}
-                        placeholder="Data od"
+                        value={roomForm.startDate}
+                        onChange={(e) =>
+                            setRoomForm({ ...roomForm, startDate: e.target.value })
+                        }
                     />
 
                     <input
                         type="date"
                         style={styles.input}
-                        placeholder="Data do"
+                        value={roomForm.endDate}
+                        onChange={(e) =>
+                            setRoomForm({ ...roomForm, endDate: e.target.value })
+                        }
                     />
 
                     <button
                         style={styles.button}
-                        onClick={() => {
-                            console.log("Rezerwacja pokoju:", selectedRoom);
-                            setView("rooms");
+                        onClick={async () => {
+                            try {
+                                const res = await fetch(`${API}/reservations`, {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        room_id: selectedRoom.room_id,
+                                        start_date: roomForm.startDate,
+                                        end_date: roomForm.endDate,
+                                        email: user.email
+                                    })
+                                });
+
+                                const data = await res.json();
+
+                                if (!res.ok) {
+                                    alert("Błąd rezerwacji");
+                                    return;
+                                }
+
+                                setBookingPrice(totalPrice);
+                                setBookingSuccess(true);
+
+                            } catch (err) {
+                                console.error(err);
+                                alert("Błąd połączenia");
+                            }
                         }}
                     >
                         Zarezerwuj
@@ -1355,7 +1649,17 @@ function App() {
                         </thead>
                         <tbody>
                             {reservations.map((r) => (
-                                <tr key={r.reservation_id}>
+                                <tr
+                                    key={r.reservation_id}
+                                    style={{ cursor: "pointer", transition: "0.2s" }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = "#f1f1f1"}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                    onClick={() => {
+                                        setSelectedReservation(r);
+                                        fetchReservationServices(r.reservation_id);
+                                        setView("reservationDetails");
+                                    }}
+                                >
                                     <td>{r.reservation_id}</td>
                                     <td>{r.start_date}</td>
                                     <td>{r.end_date}</td>
@@ -1499,7 +1803,7 @@ function App() {
                                     <th>Email</th>
                                     <th>Telefon</th>
                                     <th>Stanowisko</th>
-                                    <th>Rola</th>
+                                    <th>Numer Dokumentu</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1512,7 +1816,6 @@ function App() {
                                             <td>{e.phone_number}</td>
                                             <td>{e.position}</td>
                                             <td>{e.document_number}</td>
-                                            <td>{e.role_name}</td>
                                         </tr>
                                     ))
                                 ) : (
@@ -1522,6 +1825,144 @@ function App() {
                                 )}
                             </tbody>
                         </table>
+                    )}
+
+                    <button style={styles.link} onClick={goBack}>
+                        ← Powrót
+                    </button>
+                </div>
+            )}
+            {view === "adminIssues" && (
+                <div style={styles.section}>
+                    <h2>Zadania hotelowe</h2>
+
+                    {tasksLoading && <p>Ładowanie...</p>}
+
+                    {!tasksLoading && (
+                        <table style={styles.table}>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Pokój</th>
+                                    <th>Opis</th>
+                                    <th>Status</th>
+                                    <th>Pracownik</th>
+                                    <th>Akcje</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {tasks.map((t) => (
+                                    <tr key={t.task_id}>
+                                        <td>{t.task_id}</td>
+                                        <td>{t.room_id}</td>
+                                        <td>{t.description}</td>
+
+                                        {/* STATUS */}
+                                        <td>
+                                            <select
+                                                value={t.status}
+                                                onChange={(e) =>
+                                                    updateTaskStatus(t.task_id, e.target.value)
+                                                }
+                                            >
+                                                <option value="todo">Do zrobienia</option>
+                                                <option value="in_progress">W trakcie</option>
+                                                <option value="done">Zakończone</option>
+                                            </select>
+                                        </td>
+
+                                        {/* PRACOWNIK */}
+                                        <td>
+                                            <select
+                                                onChange={(e) =>
+                                                    assignEmployee(t.task_id, e.target.value)
+                                                }
+                                            >
+                                                <option>Wybierz</option>
+                                                {employees.map((emp) => (
+                                                    <option
+                                                        key={emp.employee_id}
+                                                        value={emp.employee_id}
+                                                    >
+                                                        {emp.first_name} {emp.last_name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </td>
+
+                                        <td>-</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+
+                    <button style={styles.link} onClick={goBack}>
+                        ← Powrót
+                    </button>
+                </div>
+            )}
+            {view === "reservationDetails" && selectedReservation && (
+                <div style={styles.section}>
+                    <h2>Szczegóły rezerwacji #{selectedReservation.reservation_id}</h2>
+
+                    <p><strong>Pokój:</strong> {selectedReservation.room_id}</p>
+                    <p><strong>Data od:</strong> {selectedReservation.start_date}</p>
+                    <p><strong>Data do:</strong> {selectedReservation.end_date}</p>
+                    <p><strong>Status:</strong> {selectedReservation.status}</p>
+
+                    {/* AKCJE */}
+                    <div style={{ marginTop: "20px", display: "flex", gap: "10px" }}>
+                        <button style={styles.button} onClick={() => cancelReservation(selectedReservation.reservation_id)}>
+                            Anuluj
+                        </button>
+
+                        <button style={styles.button} onClick={() => extendReservation(selectedReservation.reservation_id)}>
+                            Przedłuż
+                        </button>
+
+                        <button style={styles.button} onClick={() => shortenReservation(selectedReservation.reservation_id)}>
+                            Skróć
+                        </button>
+
+                        <button style={styles.button} onClick={() => downloadConfirmation(selectedReservation.reservation_id)}>
+                            Pobierz potwierdzenie
+                        </button>
+                    </div>
+
+                    {/* USŁUGI */}
+                    <h3 style={{ marginTop: "30px" }}>Usługi</h3>
+
+                    {reservationServices.length ? (
+                        <table style={styles.table}>
+                            <thead>
+                                <tr>
+                                    <th>Nazwa</th>
+                                    <th>Data</th>
+                                    <th>Status</th>
+                                    <th>Akcja</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {reservationServices.map((s, i) => (
+                                    <tr key={i}>
+                                        <td>{s.name}</td>
+                                        <td>{s.date}</td>
+                                        <td>{s.status}</td>
+                                        <td>
+                                            <button
+                                                style={styles.button}
+                                                onClick={() => cancelService(s.service_id)}
+                                            >
+                                                Anuluj
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    ) : (
+                        <p>Brak usług</p>
                     )}
 
                     <button style={styles.link} onClick={goBack}>

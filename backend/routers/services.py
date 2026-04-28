@@ -31,3 +31,38 @@ def get_user_services(email: str, conn = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Błąd pobierania usług")
     finally:
         cur.close()
+
+@router.post("/book")
+def book_service(data: dict, conn = Depends(get_db)):
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            INSERT INTO service_usage (service_id, reservation_id, quantity, actual_price)
+            SELECT 
+                s.service_id,
+                %s,
+                %s,
+                s.price * %s
+            FROM service s
+            WHERE s.service_id = %s
+            RETURNING usage_id, actual_price;
+        """, (
+            data["reservation_id"],
+            data["quantity"],
+            data["quantity"],
+            data["service_id"]
+        ))
+
+        result = cur.fetchone()
+        conn.commit()
+
+        return result
+
+    except Exception as e:
+        conn.rollback()
+        print("Błąd:", e)
+        raise HTTPException(status_code=500, detail="Błąd zapisu")
+
+    finally:
+        cur.close()
