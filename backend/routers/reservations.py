@@ -139,8 +139,6 @@ def extend_reservation(id: int, data: schemas.ReservationUpdate, conn=Depends(ge
         if not reservation:
             raise HTTPException(status_code=404, detail="Rezerwacja nie istnieje")
 
-        #print(data.end_date.strftime("%Y-%M-%D") + " <= " + end_date)
-
         # sprawdź, czy data jest odpowiednia
         if data.end_date <= end_date:
             raise HTTPException(status_code=422, detail="Przedłużona data nie może być wcześniejsza lub identyczna do poprzedniej")

@@ -196,12 +196,12 @@ class PaymentUpdate(BaseSchema):
 # 11. ZADANIE HOTELOWE (Hotel_Task)
 # ==========================
 class HotelTaskBase(BaseSchema):
-    room_id: Optional[int] = None
+    room_number: Optional[int] = None
     description: str
-    start_date: Optional[date]
-    end_date: Optional[date]
-    status: Optional[str]
-    priority_level: Optional[str]
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    status: Optional[str] = None
+    priority_level: Optional[str] = None
 
 class HotelTaskCreate(HotelTaskBase):
     pass

@@ -10,8 +10,12 @@ function App() {
         endDate: ""
     });
     const [newTask, setNewTask] = useState({
-        room_id: "",
-        description: ""
+        room_number: "",
+        description: "",
+        start_date: null,
+        end_date: null,
+        status: null,
+        priority_level: null
     });
     const [selectedReservation, setSelectedReservation] = useState(null);
     const [tasks, setTasks] = useState([]);
@@ -150,8 +154,12 @@ function App() {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    room_id: Number(newTask.room_id),
-                    description: newTask.description
+                    room_number: Number(newTask.room_number),
+                    description: newTask.description,
+                    start_date: newTask.start_date,
+                    end_date: newTask.end_date,
+                    status: newTask.status,
+                    priority_level: newTask.priority_level
                 })
             });
 
