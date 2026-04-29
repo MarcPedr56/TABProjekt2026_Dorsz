@@ -1603,7 +1603,8 @@ function App() {
                                         room_id: selectedRoom.room_id,
                                         start_date: roomForm.startDate,
                                         end_date: roomForm.endDate,
-                                        email: user.email
+                                        email: user.email,
+                                        role: role
                                     })
                                 });
 

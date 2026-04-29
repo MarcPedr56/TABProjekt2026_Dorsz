@@ -13,7 +13,7 @@ def get_payments(conn = Depends(get_db)):
     """Pobiera listę wszystkich opłat"""
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cur.execute("SELECT * FROM Payment ORDER BY payment_id;")
+        cur.execute("SELECT * FROM Payment ORDER BY status, payment_id;")
         payments = cur.fetchall()
         return payments
     except Exception as e:
@@ -60,9 +60,45 @@ def get_payments_by_pesel(pesel: str, conn = Depends(get_db)):
             JOIN Reservation r ON p.reservation_id = r.reservation_id
             JOIN Guest g ON r.main_guest_id = g.guest_id
             WHERE g.pesel = %s
-            ORDER BY p.payment_date DESC;
+            ORDER BY p.status, p.payment_date DESC;
         """, (pesel,))
         return cur.fetchall()
+    except Exception as e:
+        print(f"Błąd SQL: {e}")
+        raise HTTPException(status_code=500, detail="Błąd bazy danych podczas wyszukiwania")
+    finally:
+        cur.close()
+
+@router.put("/{id}")
+def update_payment(id: int, data: schemas.PaymentUpdate, conn = Depends(get_db)):
+    """Zmienia metodę i status płatności o danym id"""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        # znajdź płatność
+        cur.execute("""
+            SELECT p.payment_id
+            FROM Payment p
+            WHERE p.payment_id = %s;
+        """, (id,))
+    
+        payment = cur.fetchone()
+
+        if not payment:
+            raise HTTPException(status_code=404, detail="Płatność nie istnieje")
+        
+        # 🔹 zaktualizuj dane płatności
+        cur.execute("""
+            UPDATE Payment as p
+            SET method = %s, status = %s
+            WHERE p.payment_id = %s;
+        """, (
+            data.method,
+            data.status,
+            payment["payment_id"]
+        ))
+
+        conn.commit()
+
     except Exception as e:
         print(f"Błąd SQL: {e}")
         raise HTTPException(status_code=500, detail="Błąd bazy danych podczas wyszukiwania")

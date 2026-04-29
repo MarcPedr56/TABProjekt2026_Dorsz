@@ -99,18 +99,30 @@ class RoomResponse(RoomBase):
 # 6. REZERWACJA (Reservation)
 # ==========================
 class ReservationBase(BaseSchema):
-    start_date: date
-    end_date: date
+    start_date: datetime
+    end_date: datetime
     status: str = "created"
     type: Optional[str] = None
 
 class ReservationCreate(ReservationBase):
     main_guest_id: int
+    room_id: int
+    email: str
+    role: str
 
 class ReservationResponse(ReservationBase):
     reservation_id: int
     main_guest_id: int
     creation_date: datetime
+
+# class ReservationCreate(BaseModel):
+#     room_id: int
+#     start_date: date
+#     end_date: date
+#     email: str
+
+class ReservationUpdate(BaseModel):
+    end_date: date
 
 # ==========================
 # 7. PRZYPISANIE POKOJU DO REZERWACJI (Room_Reservation)
@@ -173,22 +185,36 @@ class PaymentResponse(PaymentBase):
     payment_id: int
     payment_date: datetime
 
+class PaymentUpdateMethod(BaseSchema):
+    method: str
+
+class PaymentUpdate(BaseSchema):
+    method: str
+    status: str
+
 # ==========================
 # 11. ZADANIE HOTELOWE (Hotel_Task)
 # ==========================
 class HotelTaskBase(BaseSchema):
     room_id: Optional[int] = None
     description: str
-    status: str = "todo"
-    priority_level: str = "normal"
+    start_date: Optional[date]
+    end_date: Optional[date]
+    status: Optional[str]
+    priority_level: Optional[str]
 
 class HotelTaskCreate(HotelTaskBase):
     pass
 
 class HotelTaskResponse(HotelTaskBase):
     task_id: int
-    start_date: Optional[datetime]
-    end_date: Optional[datetime]
+
+class HotelTaskUpdateStatus(BaseSchema):
+    status: str
+
+class HotelTaskAssign(BaseSchema):
+    employee_id: int
+    execution_date: Optional[date]
 
 # ==========================
 # 12. WYKONANIE ZADANIA (Task_Execution)
@@ -207,11 +233,3 @@ class TaskExecutionResponse(TaskExecutionBase):
 class RegisterRequest(BaseModel):
     user_in: AccountCreate
     guest_in: GuestCreate
-
-
-
-class ReservationCreate(BaseModel):
-    room_id: int
-    start_date: date
-    end_date: date
-    email: str

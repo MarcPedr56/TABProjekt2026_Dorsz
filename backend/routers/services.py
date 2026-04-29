@@ -32,6 +32,31 @@ def get_user_services(email: str, conn = Depends(get_db)):
     finally:
         cur.close()
 
+@router.get("/reservation/{reservationId}")
+def get_reservation_services(reservationId: int, conn = Depends(get_db)):
+    """Wyszukuje wykonane usługi dla danej rezerwacji po id"""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT 
+                s.name, 
+                TO_CHAR(su.usage_date, 'YYYY-MM-DD HH24:MI') as date, 
+                'Ilość' as quantity,
+                'Cena łącznie' as actual_price,
+                'Zrealizowano' as status
+            FROM Service_Usage su
+            JOIN Service s ON su.service_id = s.service_id
+            JOIN Reservation r ON su.reservation_id = r.reservation_id
+            WHERE r.reservation_id = %s
+            ORDER BY su.usage_date DESC;
+        """, (reservationId,))
+        return cur.fetchall()
+    except Exception as e:
+        print(f"Błąd SQL: {e}")
+        raise HTTPException(status_code=500, detail="Błąd pobierania usług")
+    finally:
+        cur.close()
+
 @router.post("/book")
 def book_service(data: dict, conn = Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
