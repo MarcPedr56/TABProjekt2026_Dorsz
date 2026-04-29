@@ -9,6 +9,10 @@ function App() {
         startDate: "",
         endDate: ""
     });
+    const [newTask, setNewTask] = useState({
+        room_id: "",
+        description: ""
+    });
     const [selectedReservation, setSelectedReservation] = useState(null);
     const [tasks, setTasks] = useState([]);
     const [tasksLoading, setTasksLoading] = useState(false);
@@ -138,6 +142,35 @@ function App() {
             [e.target.name]: e.target.value
         });
     };
+    const addTask = async () => {
+        try {
+            const res = await fetch("http://127.0.0.1:8000/tasks", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    room_id: Number(newTask.room_id),
+                    description: newTask.description
+                })
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                alert(data.detail || "Błąd");
+                return;
+            }
+
+            alert("Usterka dodana");
+            setNewTask({ room_id: "", description: "" });
+            fetchTasks();
+
+        } catch (err) {
+            console.error(err);
+            alert("Błąd połączenia");
+        }
+    };
     const fetchEmployees = () => {
         setEmployeesLoading(true);
 
@@ -246,7 +279,7 @@ function App() {
     const goBack = () => {
         if (!role) setView("dashboard");
         else if (role === "admin") setView("admin");
-        else if (role === "reception") setView("reception");
+        else if (role === "receptionist") setView("reception");
         else if (role === "guest") setView("account");
         else setView("dashboard");
     };
@@ -635,7 +668,7 @@ function App() {
                         onClick={() => {
                             if (!role) setView("login");
                             else if (role === "admin") setView("admin");
-                            else if (role === "reception") setView("reception");
+                            else if (role === "receptionist") setView("reception");
                             else setView("account");
                         }}
                     >
@@ -930,7 +963,7 @@ function App() {
                                 setUser({ email });
 
                                 if (data.role === "admin") setView("admin");
-                                else if (data.role === "reception") setView("reception");
+                                else if (data.role === "receptionist") setView("reception");
                                 else if (data.role === "guest") setView("account");
                                 else setView("dashboard");
 
@@ -1110,7 +1143,9 @@ function App() {
         guests.map((g) => (
             <tr
                 key={g.guest_id}
-                style={{ cursor: "pointer" }}
+                style={{ cursor: "pointer", transition: "0.2s" }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "#f1f1f1"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                 onClick={() => {
                     setSelectedGuest(g);
                     fetchGuestReservations(g.guest_id);
@@ -1297,6 +1332,8 @@ function App() {
                                         <tr
                                             key={r.reservation_id}
                                             style={{ cursor: "pointer" }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = "#f1f1f1"}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                                             onClick={() => {
                                                 setSelectedReservation(r);
                                                 fetchReservationServices(r.reservation_id);
@@ -1840,62 +1877,66 @@ function App() {
                     {tasksLoading && <p>Ładowanie...</p>}
 
                     {!tasksLoading && (
-                        <table style={styles.table}>
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Pokój</th>
-                                    <th>Opis</th>
-                                    <th>Status</th>
-                                    <th>Pracownik</th>
-                                    <th>Akcje</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {tasks.map((t) => (
-                                    <tr key={t.task_id}>
-                                        <td>{t.task_id}</td>
-                                        <td>{t.room_id}</td>
-                                        <td>{t.description}</td>
+                        <>
+                            <h3>Zgłoś usterkę</h3>
 
-                                        {/* STATUS */}
-                                        <td>
-                                            <select
-                                                value={t.status}
-                                                onChange={(e) =>
-                                                    updateTaskStatus(t.task_id, e.target.value)
-                                                }
-                                            >
-                                                <option value="todo">Do zrobienia</option>
-                                                <option value="in_progress">W trakcie</option>
-                                                <option value="done">Zakończone</option>
-                                            </select>
-                                        </td>
+                            <input
+                                placeholder="Numer pokoju"
+                                style={styles.input}
+                                value={newTask.room_number}
+                                onChange={(e) => setNewTask({ ...newTask, room_number: e.target.value })}
+                            />
 
-                                        {/* PRACOWNIK */}
-                                        <td>
-                                            <select
-                                                onChange={(e) =>
-                                                    assignEmployee(t.task_id, e.target.value)
-                                                }
-                                            >
-                                                <option>Wybierz</option>
-                                                {employees.map((emp) => (
-                                                    <option
-                                                        key={emp.employee_id}
-                                                        value={emp.employee_id}
-                                                    >
-                                                        {emp.first_name} {emp.last_name}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </td>
+                            <input
+                                placeholder="Opis usterki"
+                                style={styles.input}
+                                value={newTask.description}
+                                onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+                            />
 
-                                        <td>-</td>
+                            <button style={styles.button} onClick={addTask}>
+                                Zgłoś usterkę
+                            </button>
+
+                            <table style={styles.table}>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Pokój</th>
+                                        <th>Opis</th>
+                                        <th>Status</th>
+                                        <th>Pracownik</th>
+                                        <th>Akcje</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+
+                                <tbody>
+                                    {tasks.map((t) => (
+                                        <tr key={t.task_id}>
+                                            <td>{t.task_id}</td>
+                                            <td>{t.room_id}</td>
+                                            <td>{t.description}</td>
+
+                                            <td>
+                                                <select
+                                                    value={t.status}
+                                                    onChange={(e) =>
+                                                        updateTaskStatus(t.task_id, e.target.value)
+                                                    }
+                                                >
+                                                    <option value="todo">Do zrobienia</option>
+                                                    <option value="in_progress">W trakcie</option>
+                                                    <option value="done">Zakończone</option>
+                                                </select>
+                                            </td>
+
+                                            <td>-</td>
+                                            <td>-</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </>
                     )}
 
                     <button style={styles.link} onClick={goBack}>
