@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
-from routers import rooms, guests, payments, reservations, employees, services, auth
+from routers import rooms, guests, hotel_tasks, payments, reservations, employees, services, auth
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="1.0.0"
@@ -17,6 +17,7 @@ app.add_middleware(
 
 app.include_router(rooms.router)
 app.include_router(guests.router)
+app.include_router(hotel_tasks.router)
 app.include_router(payments.router)
 app.include_router(reservations.router)
 app.include_router(employees.router)
