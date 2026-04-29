@@ -91,7 +91,6 @@ def update_payment(id: int, data: schemas.PaymentUpdate, conn = Depends(get_db))
         if not payment:
             raise HTTPException(status_code=404, detail="Płatność nie istnieje")
         
-        # 🔹 zaktualizuj dane płatności
         cur.execute("""
             UPDATE Payment as p
             SET method = %s, status = %s
@@ -140,7 +139,6 @@ def generate_invoice_pdf(id: int, conn = Depends(get_db)):
         """, (id,))
         services = cur.fetchall()
 
-# --- GENEROWANIE PDF W CZYSTYM PYTHONIE ---
         pdf = FPDF()
         pdf.add_page()
         
