@@ -437,6 +437,29 @@ function App() {
             .then(() => fetchPayments());
     };
 
+    const downloadInvoice = async (paymentId) => {
+        try {
+            const response = await fetch(`${API}/payments/${paymentId}/pdf`);
+            
+            if (!response.ok) {
+                throw new Error("Nie udało się wygenerować faktury. Sprawdź backend.");
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `faktura_nr_${paymentId}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error("Błąd pobierania PDF:", error);
+            alert("Wystąpił problem z pobieraniem faktury.");
+        }
+    };
+
     const styles = {
         page: {
             fontFamily: "Georgia, sans-serif",
@@ -1493,6 +1516,7 @@ function App() {
                                     <th>Rezerwacja</th>
                                     <th>Metoda</th>
                                     <th>Status</th>
+                                    <th>Faktura</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1502,7 +1526,14 @@ function App() {
                                         <td>{p.amount} PLN</td>
                                         <td>{p.payment_date}</td>
                                         <td>{p.reservation_id}</td>
-
+                                        <td>
+                                          <button 
+                                            style={{...styles.button, background: "#dc3545"}} 
+                                            onClick={() => downloadInvoice(p.payment_id)}
+                                          >
+                                            PDF
+                                          </button>
+                                        </td>
                                         {/* METODA */}
                                         <td>
                                             <select
@@ -1764,6 +1795,7 @@ function App() {
                                     <th>Metoda</th>
                                     <th>Status</th>
                                     <th>Data</th>
+                                    <th>Faktura</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1774,7 +1806,16 @@ function App() {
                                         <td>{p.method}</td>
                                         <td>{p.status}</td>
                                         <td>{p.payment_date}</td>
+                                        <td>
+                                            <button 
+                                                style={{...styles.button, background: "#dc3545"}} 
+                                                onClick={() => downloadInvoice(p.payment_id)}
+                                            >
+                                                PDF
+                                            </button>
+                                        </td>  
                                     </tr>
+                                    
                                 ))}
                             </tbody>
                         </table>
