@@ -56,23 +56,25 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
-        # TODO: ustalić konwencję numerowania ID pracowników - adminów i recepcjonnistów
+        # 🔹 znajdź guest
+        cur.execute("""
+            SELECT g.guest_id
+            FROM Guest g
+            JOIN Account a ON g.guest_id = a.guest_id
+            WHERE a.email = %s
+        """, (data.email,))
+        guest = cur.fetchone()
+
         guest_id = 0
 
         if (data.role == "guest"):
-            # 🔹 znajdź guest
-            cur.execute("""
-                SELECT g.guest_id
-                FROM Guest g
-                JOIN Account a ON g.guest_id = a.guest_id
-                WHERE a.email = %s
-            """, (data.email,))
-            guest = cur.fetchone()
-
             if not guest:
                 raise HTTPException(status_code=404, detail="Gość nie istnieje")
-
+            
             guest_id = guest["guest_id"]
+        elif (data.role in ("admin", "receptionist")):
+            if guest:
+                raise HTTPException(status_code=404, detail="Gość już istnieje")
 
         # 🔹 pobierz cenę pokoju
         cur.execute("SELECT price_per_night FROM room WHERE room_id = %s", (data.room_id,))
@@ -82,6 +84,20 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
             raise HTTPException(status_code=404, detail="Pokój nie istnieje")
 
         price = room["price_per_night"]
+
+        if (data.role in ("admin", "receptionist")):
+            # utwórz nowego gościa i dodaj do bazy
+            cur.execute("""
+                INSERT INTO Guest (first_name, last_name, pesel, phone_number, preferences) 
+                VALUES (%s, %s, %s, %s, %s) 
+                RETURNING guest_id, first_name, last_name, pesel, phone_number, preferences;
+            """, (
+                guest.first_name, 
+                guest.last_name, 
+                guest.pesel, 
+                guest.phone_number, 
+                guest.preferences
+            ))
 
         # 🔹 utwórz rezerwację
         cur.execute("""
