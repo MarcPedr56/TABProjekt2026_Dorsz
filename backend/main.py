@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
-from routers import rooms, guests, hotel_tasks, payments, reservations, employees, services, auth
+from routers import rooms, guests, hotel_tasks, payments, reservations, employees, services, auth, reports
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="1.0.0"
@@ -23,6 +23,7 @@ app.include_router(reservations.router)
 app.include_router(employees.router)
 app.include_router(services.router)
 app.include_router(auth.router)
+app.include_router(reports.router)
 
 
 @app.get("/", tags=["Health Check"])

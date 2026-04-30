@@ -49,6 +49,18 @@ function App() {
         confirmPassword: ""
     });
     const [payments, setPayments] = useState([]);
+    const [reportData, setReportData] = useState(null);
+    const [reportsLoading, setReportsLoading] = useState(false);
+    const fetchReport = (endpoint) => {
+        setReportsLoading(true);
+        fetch(`http://127.0.0.1:8000/reports/${endpoint}`)
+            .then(res => res.json())
+            .then(data => {
+                setReportData(data);
+                setReportsLoading(false);
+            })
+            .catch(() => setReportsLoading(false));
+    };
     const [paymentsLoading, setPaymentsLoading] = useState(false);
     const [searchPesel, setSearchPesel] = useState("");
     const [guests, setGuests] = useState([]);
@@ -1082,6 +1094,7 @@ function App() {
                         <div
                             style={styles.accountCard}
                             onClick={() => {
+                                fetchGuests();
                                 fetchReservations();
                                 setView("adminReservations");
                             }}
@@ -1373,8 +1386,8 @@ function App() {
                                         >
                                             <td>{r.reservation_id}</td>
                                             <td>{getGuestName(r.main_guest_id)}</td>
-                                            <td>{r.start_date}</td>
-                                            <td>{r.end_date}</td>
+                                            <td>{r.start_date ? r.start_date.split('T')[0] : ""}</td>
+                                            <td>{r.end_date ? r.end_date.split('T')[0] : ""}</td>
                                             <td>{r.status}</td>
                                         </tr>
                                     ))
@@ -1451,42 +1464,85 @@ function App() {
             {view === "reportOccupancy" && (
                 <div style={styles.section}>
                     <h2>Obłożenie hotelu</h2>
-                    <p>Tu będzie raport obłożenia</p>
-                    <button style={styles.link} onClick={() => setView("adminReports")}>← Powrót</button>
+                    <button style={styles.button} onClick={() => fetchReport("occupancy")}>Generuj raport</button>
+                    {reportData && (
+                        <div style={{marginTop: '20px'}}>
+                            <p>Wszystkich pokoi: {reportData.total_rooms}</p>
+                            <p>Zajętych: {reportData.occupied_rooms}</p>
+                            <h3>Obłożenie: {reportData.occupancy_rate}%</h3>
+                        </div>
+                    )}
+                    <button style={styles.link} onClick={() => {setView("adminReports"); setReportData(null);}}>← Powrót</button>
                 </div>
             )}
 
             {view === "reportRevenue" && (
                 <div style={styles.section}>
                     <h2>Przychody</h2>
-                    <p>Tu będzie raport przychodów</p>
-                    <button style={styles.link} onClick={() => setView("adminReports")}>← Powrót</button>
+                    <button style={styles.button} onClick={() => fetchReport("revenue")}>Generuj raport</button>
+                    {reportData && (
+                        <h1 style={{marginTop: '20px'}}>Suma: {reportData.total_revenue || 0} PLN</h1>
+                    )}
+                    <button style={styles.link} onClick={() => {setView("adminReports"); setReportData(null);}}>← Powrót</button>
                 </div>
             )}
 
             {view === "reportServices" && (
                 <div style={styles.section}>
                     <h2>Analiza usług</h2>
-                    <p>Tu będzie analiza usług</p>
-                    <button style={styles.link} onClick={() => setView("adminReports")}>← Powrót</button>
+                    <button style={styles.button} onClick={() => fetchReport("services-analysis")}>Pobierz statystyki</button>
+                    {reportData && Array.isArray(reportData) && (
+                        <table style={styles.table}>
+                            <thead>
+                                <tr><th>Usługa</th><th>Liczba użyć</th><th>Suma przychodu</th></tr>
+                            </thead>
+                            <tbody>
+                                {reportData.map((s, i) => (
+                                    <tr key={i}>
+                                        <td>{s.name}</td>
+                                        <td>{s.usage_count}</td>
+                                        <td>{s.total_earned || 0} PLN</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                    <button style={styles.link} onClick={() => {setView("adminReports"); setReportData(null);}}>← Powrót</button>
                 </div>
             )}
 
             {view === "reportLength" && (
                 <div style={styles.section}>
                     <h2>Średnia długość pobytu</h2>
-                    <p>Tu będą statystyki pobytu</p>
-                    <button style={styles.link} onClick={() => setView("adminReports")}>← Powrót</button>
+                    <button style={styles.button} onClick={() => fetchReport("average-stay")}>Oblicz średnią</button>
+                    {reportData && (
+                        <div style={{marginTop: '20px', textAlign: 'center'}}>
+                            <h1 style={{fontSize: '48px'}}>{reportData.avg_days || 0}</h1>
+                            <p>dni (średnio na rezerwację)</p>
+                        </div>
+                    )}
+                    <button style={styles.link} onClick={() => {setView("adminReports"); setReportData(null);}}>← Powrót</button>
                 </div>
             )}
 
             {view === "reportReturning" && (
                 <div style={styles.section}>
                     <h2>Powracający goście</h2>
-                    <p>Tu będą dane o powracających gościach</p>
-                    <button style={styles.link} onClick={() => setView("adminReports")}>← Powrót</button>
+                    <button style={styles.button} onClick={() => fetchReport("returning-guests")}>Pobierz listę</button>
+                    <table style={styles.table}>
+                        <thead>
+                            <tr><th>Imię</th><th>Nazwisko</th><th>Liczba wizyt</th></tr>
+                        </thead>
+                        <tbody>
+                            {Array.isArray(reportData) && reportData.map((g, i) => (
+                                <tr key={i}><td>{g.first_name}</td><td>{g.last_name}</td><td>{g.reservation_count}</td></tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    <button style={styles.link} onClick={() => {setView("adminReports"); setReportData(null);}}>← Powrót</button>
                 </div>
             )}
+
             {view === "adminPayments" && (
                 <div style={styles.section}>
                     <h2>Płatności</h2>
