@@ -258,9 +258,9 @@ def end_reservation(id: int, conn=Depends(get_db)):
             reservation["room_id"],
             "sprzątanie po zakończonej rezerwacji",
             datetime.today().strftime("%Y-%M-%D"),
-            (datetime.today() + timedelta(days=3)).strftime("%Y-%M-%D"),
+            datetime.today().strftime("%Y-%M-%D"),
             "created",
-            "normal"
+            "high"
         ))
 
         conn.commit()
