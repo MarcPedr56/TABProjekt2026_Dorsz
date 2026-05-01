@@ -10,8 +10,19 @@ function App() {
         endDate: ""
     });
     const [newTask, setNewTask] = useState({
-        room_id: "",
-        description: ""
+        room_number: "",
+        description: "",
+        start_date: null,
+        end_date: null,
+        status: null,
+        priority_level: null
+    });
+    const [bookingGuest, setBookingGuest] = useState({
+        first_name: "",
+        last_name: "",
+        pesel: "",
+        phone_number: "",
+        preferences: ""
     });
     const [selectedReservation, setSelectedReservation] = useState(null);
     const [tasks, setTasks] = useState([]);
@@ -45,6 +56,18 @@ function App() {
         confirmPassword: ""
     });
     const [payments, setPayments] = useState([]);
+    const [reportData, setReportData] = useState(null);
+    const [reportsLoading, setReportsLoading] = useState(false);
+    const fetchReport = (endpoint) => {
+        setReportsLoading(true);
+        fetch(`http://127.0.0.1:8000/reports/${endpoint}`)
+            .then(res => res.json())
+            .then(data => {
+                setReportData(data);
+                setReportsLoading(false);
+            })
+            .catch(() => setReportsLoading(false));
+    };
     const [paymentsLoading, setPaymentsLoading] = useState(false);
     const [searchPesel, setSearchPesel] = useState("");
     const [guests, setGuests] = useState([]);
@@ -150,8 +173,12 @@ function App() {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    room_id: Number(newTask.room_id),
-                    description: newTask.description
+                    room_number: Number(newTask.room_number),
+                    description: newTask.description,
+                    start_date: newTask.start_date,
+                    end_date: newTask.end_date,
+                    status: newTask.status,
+                    priority_level: newTask.priority_level
                 })
             });
 
@@ -330,8 +357,27 @@ function App() {
         }).then(() => fetchReservations());
     };
 
-    const downloadConfirmation = (id) => {
-        window.open(`${API}/reservations/${id}/confirmation`);
+    const downloadConfirmation = async (reservationId) => {
+        try {
+            const response = await fetch(`${API}/reservations/${reservationId}/confirmation`);
+            
+            if (!response.ok) {
+                throw new Error("Nie udało się pobrać potwierdzenia rezerwacji.");
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `potwierdzenie_nr_${reservationId}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error("Błąd pobierania PDF:", error);
+            alert("Wystąpił problem z pobieraniem potwierdzenia.");
+        }
     };
 
     const cancelService = (serviceId) => {
@@ -361,6 +407,33 @@ function App() {
     const getGuestName = (guestId) => {
         const guest = guests.find(g => g.guest_id === guestId);
         return guest ? `${guest.first_name} ${guest.last_name}` : "Brak danych";
+    };
+    const searchAvailableRooms = async () => {
+        try {
+
+            if (!roomForm.startDate || !roomForm.endDate) {
+                alert("Wybierz daty");
+                return;
+            }
+
+            const res = await fetch(
+                `${API}/rooms/available?start_date=${roomForm.startDate}&end_date=${roomForm.endDate}`
+            );
+
+            if (!res.ok) {
+                throw new Error("Błąd pobierania pokoi");
+            }
+
+            const data = await res.json();
+
+            console.log("AVAILABLE ROOMS:", data);
+
+            setRooms(Array.isArray(data) ? data : []);
+
+        } catch (err) {
+            console.error(err);
+            alert("Błąd wyszukiwania pokoi");
+        }
     };
     const fetchMyPayments = () => {
         if (!user || !user.email) return;
@@ -451,7 +524,7 @@ function App() {
             alert("Wystąpił problem z pobieraniem faktury.");
         }
     };
-
+    const today = new Date().toISOString().split("T")[0];
     const styles = {
         page: {
             fontFamily: "Georgia, sans-serif",
@@ -730,7 +803,62 @@ function App() {
 
                     {loading && <p>Ładowanie pokoi...</p>}
                     {error && <p style={{ color: 'red' }}>Błąd: {error}</p>}
+                    <div
+                        style={{
+                            background: "#fff",
+                            padding: "20px",
+                            borderRadius: "10px",
+                            marginBottom: "30px",
+                            display: "flex",
+                            gap: "15px",
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
+                        }}
+                    >
+                        <div>
+                            <label>Data przyjazdu</label>
+                            <input
+                                type="date"
+                                min={today}
+                                style={styles.input}
+                                value={roomForm.startDate}
+                                onChange={(e) =>
+                                    setRoomForm({
+                                        ...roomForm,
+                                        startDate: e.target.value
+                                    })
+                                }
+                            />
+                        </div>
 
+                        <div>
+                            <label>Data wyjazdu</label>
+                            <input
+                                type="date"
+                                min={today}
+                                style={styles.input}
+                                value={roomForm.endDate}
+                                onChange={(e) =>
+                                    setRoomForm({
+                                        ...roomForm,
+                                        endDate: e.target.value
+                                    })
+                                }
+                            />
+                        </div>
+
+                        <button
+                            style={{
+                                ...styles.button,
+                                marginTop: "20px",
+                                height: "45px"
+                            }}
+                            onClick={searchAvailableRooms}
+                        >
+                            Szukaj
+                        </button>
+                    </div>
                     <div style={styles.roomsGrid}>
                         {rooms.map((room) => (
                             <div key={room.room_id} style={styles.roomCard}>
@@ -756,10 +884,30 @@ function App() {
                                 <button
                                     style={styles.button}
                                     onClick={() => {
+
                                         if (!role) {
                                             setView("login");
                                         } else {
+
+                                            // reset dat
+                                            setRoomForm({
+                                                startDate: "",
+                                                endDate: ""
+                                            });
+
+                                            // reset danych gościa
+                                            setBookingGuest({
+                                                first_name: "",
+                                                last_name: "",
+                                                pesel: "",
+                                                phone_number: "",
+                                                preferences: ""
+                                            });
+
+                                            // ustaw pokój
                                             setSelectedRoom(room);
+
+                                            // przejdź do rezerwacji
                                             setView("roomBooking");
                                         }
                                     }}
@@ -824,6 +972,7 @@ function App() {
                     <input
                         name="date"
                         type="date"
+                        min={today}
                         style={styles.input}
                         value={serviceForm.date}
                         onChange={handleServiceChange}
@@ -1074,6 +1223,7 @@ function App() {
                         <div
                             style={styles.accountCard}
                             onClick={() => {
+                                fetchGuests();
                                 fetchReservations();
                                 setView("adminReservations");
                             }}
@@ -1365,8 +1515,8 @@ function App() {
                                         >
                                             <td>{r.reservation_id}</td>
                                             <td>{getGuestName(r.main_guest_id)}</td>
-                                            <td>{r.start_date}</td>
-                                            <td>{r.end_date}</td>
+                                            <td>{r.start_date ? r.start_date.split('T')[0] : ""}</td>
+                                            <td>{r.end_date ? r.end_date.split('T')[0] : ""}</td>
                                             <td>{r.status}</td>
                                         </tr>
                                     ))
@@ -1443,42 +1593,85 @@ function App() {
             {view === "reportOccupancy" && (
                 <div style={styles.section}>
                     <h2>Obłożenie hotelu</h2>
-                    <p>Tu będzie raport obłożenia</p>
-                    <button style={styles.link} onClick={() => setView("adminReports")}>← Powrót</button>
+                    <button style={styles.button} onClick={() => fetchReport("occupancy")}>Generuj raport</button>
+                    {reportData && (
+                        <div style={{marginTop: '20px'}}>
+                            <p>Wszystkich pokoi: {reportData.total_rooms}</p>
+                            <p>Zajętych: {reportData.occupied_rooms}</p>
+                            <h3>Obłożenie: {reportData.occupancy_rate}%</h3>
+                        </div>
+                    )}
+                    <button style={styles.link} onClick={() => {setView("adminReports"); setReportData(null);}}>← Powrót</button>
                 </div>
             )}
 
             {view === "reportRevenue" && (
                 <div style={styles.section}>
                     <h2>Przychody</h2>
-                    <p>Tu będzie raport przychodów</p>
-                    <button style={styles.link} onClick={() => setView("adminReports")}>← Powrót</button>
+                    <button style={styles.button} onClick={() => fetchReport("revenue")}>Generuj raport</button>
+                    {reportData && (
+                        <h1 style={{marginTop: '20px'}}>Suma: {reportData.total_revenue || 0} PLN</h1>
+                    )}
+                    <button style={styles.link} onClick={() => {setView("adminReports"); setReportData(null);}}>← Powrót</button>
                 </div>
             )}
 
             {view === "reportServices" && (
                 <div style={styles.section}>
                     <h2>Analiza usług</h2>
-                    <p>Tu będzie analiza usług</p>
-                    <button style={styles.link} onClick={() => setView("adminReports")}>← Powrót</button>
+                    <button style={styles.button} onClick={() => fetchReport("services-analysis")}>Pobierz statystyki</button>
+                    {reportData && Array.isArray(reportData) && (
+                        <table style={styles.table}>
+                            <thead>
+                                <tr><th>Usługa</th><th>Liczba użyć</th><th>Suma przychodu</th></tr>
+                            </thead>
+                            <tbody>
+                                {reportData.map((s, i) => (
+                                    <tr key={i}>
+                                        <td>{s.name}</td>
+                                        <td>{s.usage_count}</td>
+                                        <td>{s.total_earned || 0} PLN</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                    <button style={styles.link} onClick={() => {setView("adminReports"); setReportData(null);}}>← Powrót</button>
                 </div>
             )}
 
             {view === "reportLength" && (
                 <div style={styles.section}>
                     <h2>Średnia długość pobytu</h2>
-                    <p>Tu będą statystyki pobytu</p>
-                    <button style={styles.link} onClick={() => setView("adminReports")}>← Powrót</button>
+                    <button style={styles.button} onClick={() => fetchReport("average-stay")}>Oblicz średnią</button>
+                    {reportData && (
+                        <div style={{marginTop: '20px', textAlign: 'center'}}>
+                            <h1 style={{fontSize: '48px'}}>{reportData.avg_days || 0}</h1>
+                            <p>dni (średnio na rezerwację)</p>
+                        </div>
+                    )}
+                    <button style={styles.link} onClick={() => {setView("adminReports"); setReportData(null);}}>← Powrót</button>
                 </div>
             )}
 
             {view === "reportReturning" && (
                 <div style={styles.section}>
                     <h2>Powracający goście</h2>
-                    <p>Tu będą dane o powracających gościach</p>
-                    <button style={styles.link} onClick={() => setView("adminReports")}>← Powrót</button>
+                    <button style={styles.button} onClick={() => fetchReport("returning-guests")}>Pobierz listę</button>
+                    <table style={styles.table}>
+                        <thead>
+                            <tr><th>Imię</th><th>Nazwisko</th><th>Liczba wizyt</th></tr>
+                        </thead>
+                        <tbody>
+                            {Array.isArray(reportData) && reportData.map((g, i) => (
+                                <tr key={i}><td>{g.first_name}</td><td>{g.last_name}</td><td>{g.reservation_count}</td></tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    <button style={styles.link} onClick={() => {setView("adminReports"); setReportData(null);}}>← Powrót</button>
                 </div>
             )}
+
             {view === "adminPayments" && (
                 <div style={styles.section}>
                     <h2>Płatności</h2>
@@ -1642,6 +1835,7 @@ function App() {
                     </p>
                     <input
                         type="date"
+                        min={today}
                         style={styles.input}
                         value={roomForm.startDate}
                         onChange={(e) =>
@@ -1651,13 +1845,78 @@ function App() {
 
                     <input
                         type="date"
+                        min={today}
                         style={styles.input}
                         value={roomForm.endDate}
                         onChange={(e) =>
                             setRoomForm({ ...roomForm, endDate: e.target.value })
                         }
                     />
+                    {(role === "admin" || role === "receptionist") && (
+                        <>
+                            <h3>Dane gościa</h3>
 
+                            <input
+                                placeholder="Imię"
+                                style={styles.input}
+                                value={bookingGuest.first_name}
+                                onChange={(e) =>
+                                    setBookingGuest({
+                                        ...bookingGuest,
+                                        first_name: e.target.value
+                                    })
+                                }
+                            />
+
+                            <input
+                                placeholder="Nazwisko"
+                                style={styles.input}
+                                value={bookingGuest.last_name}
+                                onChange={(e) =>
+                                    setBookingGuest({
+                                        ...bookingGuest,
+                                        last_name: e.target.value
+                                    })
+                                }
+                            />
+
+                            <input
+                                placeholder="PESEL"
+                                style={styles.input}
+                                value={bookingGuest.pesel}
+                                onChange={(e) =>
+                                    setBookingGuest({
+                                        ...bookingGuest,
+                                        pesel: e.target.value
+                                    })
+                                }
+                            />
+
+                            <input
+                                placeholder="Telefon"
+                                style={styles.input}
+                                value={bookingGuest.phone_number}
+                                onChange={(e) =>
+                                    setBookingGuest({
+                                        ...bookingGuest,
+                                        phone_number: e.target.value
+                                    })
+                                }
+                            />
+
+                            <input
+                                placeholder="Preferencje"
+                                style={styles.input}
+                                value={bookingGuest.preferences}
+                                onChange={(e) =>
+                                    setBookingGuest({
+                                        ...bookingGuest,
+                                        preferences: e.target.value
+                                    })
+                                }
+                            />
+                        </>
+                    )}
                     <button
                         style={styles.button}
                         onClick={async () => {
@@ -1671,24 +1930,69 @@ function App() {
                                         room_id: selectedRoom.room_id,
                                         start_date: roomForm.startDate,
                                         end_date: roomForm.endDate,
-                                        email: user.email,
-                                        role: role
+
+                                        role: role,
+
+                                        main_guest_id:
+                                            role === "guest"
+                                                ? user.guest_id
+                                                : null,
+
+                                        email:
+                                            role === "guest"
+                                                ? user.email
+                                                : null,
+
+                                        first_name:
+                                            role === "guest"
+                                                ? user.first_name
+                                                : bookingGuest.first_name,
+
+                                        last_name:
+                                            role === "guest"
+                                                ? user.last_name
+                                                : bookingGuest.last_name,
+
+                                        pesel:
+                                            role === "guest"
+                                                ? user.pesel
+                                                : bookingGuest.pesel,
+
+                                        phone_number:
+                                            role === "guest"
+                                                ? user.phone_number
+                                                : bookingGuest.phone_number,
+
+                                        preferences:
+                                            role === "guest"
+                                                ? user.preferences
+                                                : bookingGuest.preferences
                                     })
                                 });
 
                                 const data = await res.json();
 
                                 if (!res.ok) {
-                                    alert("Błąd rezerwacji");
+
+                                    if (res.status === 409) {
+                                        alert("Pokój niedostępny w danym terminie");
+                                    } else {
+                                        alert(data.detail || "Błąd rezerwacji");
+                                    }
+
                                     return;
                                 }
-
                                 setBookingPrice(totalPrice);
                                 setBookingSuccess(true);
 
                             } catch (err) {
                                 console.error(err);
-                                alert("Błąd połączenia");
+
+                                if (err.message.includes("409")) {
+                                    alert("Pokój niedostępny w danym terminie");
+                                } else {
+                                    alert("Błąd połączenia");
+                                }
                             }
                         }}
                     >
