@@ -112,9 +112,9 @@ class ReservationBase(BaseSchema):
     type: Optional[str] = None
 
 class ReservationCreate(ReservationBase):
-    main_guest_id: int
+    main_guest_id: Optional[int] = None
     room_id: int
-    email: str
+    email: Optional[str] = None
     role: str
     # dodatkowe pola do wypełnienia w przypadku wykonywania rezerwacji na kogoś
     first_name: Optional[str]   = Field(..., max_length=50)

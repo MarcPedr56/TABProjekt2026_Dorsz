@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from psycopg2.extras import RealDictCursor
 from database import get_db
 import schemas
+from datetime import date
+from fastapi import Query
 
 router = APIRouter(
     prefix="/rooms",
@@ -50,5 +52,41 @@ def add_room(room: schemas.RoomCreate, conn = Depends(get_db)):
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
+
+@router.get("/available")
+def get_available_rooms(
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    conn=Depends(get_db)
+):
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT *
+            FROM Room r
+            WHERE r.room_id NOT IN (
+                SELECT rr.room_id
+                FROM Room_reservation rr
+                JOIN Reservation re
+                    ON rr.reservation_id = re.reservation_id
+                WHERE
+                    re.status != 'cancelled'
+                    AND (
+                        re.start_date,
+                        re.end_date
+                    ) OVERLAPS (%s, %s)
+            )
+            ORDER BY r.room_id;
+        """, (start_date, end_date))
+
+        rooms = cur.fetchall()
+        return rooms
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
     finally:
         cur.close()

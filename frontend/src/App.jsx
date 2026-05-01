@@ -17,6 +17,13 @@ function App() {
         status: null,
         priority_level: null
     });
+    const [bookingGuest, setBookingGuest] = useState({
+        first_name: "",
+        last_name: "",
+        pesel: "",
+        phone_number: "",
+        preferences: ""
+    });
     const [selectedReservation, setSelectedReservation] = useState(null);
     const [tasks, setTasks] = useState([]);
     const [tasksLoading, setTasksLoading] = useState(false);
@@ -382,6 +389,33 @@ function App() {
         const guest = guests.find(g => g.guest_id === guestId);
         return guest ? `${guest.first_name} ${guest.last_name}` : "Brak danych";
     };
+    const searchAvailableRooms = async () => {
+        try {
+
+            if (!roomForm.startDate || !roomForm.endDate) {
+                alert("Wybierz daty");
+                return;
+            }
+
+            const res = await fetch(
+                `${API}/rooms/available?start_date=${roomForm.startDate}&end_date=${roomForm.endDate}`
+            );
+
+            if (!res.ok) {
+                throw new Error("Błąd pobierania pokoi");
+            }
+
+            const data = await res.json();
+
+            console.log("AVAILABLE ROOMS:", data);
+
+            setRooms(Array.isArray(data) ? data : []);
+
+        } catch (err) {
+            console.error(err);
+            alert("Błąd wyszukiwania pokoi");
+        }
+    };
     const fetchMyPayments = () => {
         if (!user || !user.email) return;
 
@@ -471,7 +505,7 @@ function App() {
             alert("Wystąpił problem z pobieraniem faktury.");
         }
     };
-
+    const today = new Date().toISOString().split("T")[0];
     const styles = {
         page: {
             fontFamily: "Georgia, sans-serif",
@@ -750,7 +784,62 @@ function App() {
 
                     {loading && <p>Ładowanie pokoi...</p>}
                     {error && <p style={{ color: 'red' }}>Błąd: {error}</p>}
+                    <div
+                        style={{
+                            background: "#fff",
+                            padding: "20px",
+                            borderRadius: "10px",
+                            marginBottom: "30px",
+                            display: "flex",
+                            gap: "15px",
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
+                        }}
+                    >
+                        <div>
+                            <label>Data przyjazdu</label>
+                            <input
+                                type="date"
+                                min={today}
+                                style={styles.input}
+                                value={roomForm.startDate}
+                                onChange={(e) =>
+                                    setRoomForm({
+                                        ...roomForm,
+                                        startDate: e.target.value
+                                    })
+                                }
+                            />
+                        </div>
 
+                        <div>
+                            <label>Data wyjazdu</label>
+                            <input
+                                type="date"
+                                min={today}
+                                style={styles.input}
+                                value={roomForm.endDate}
+                                onChange={(e) =>
+                                    setRoomForm({
+                                        ...roomForm,
+                                        endDate: e.target.value
+                                    })
+                                }
+                            />
+                        </div>
+
+                        <button
+                            style={{
+                                ...styles.button,
+                                marginTop: "20px",
+                                height: "45px"
+                            }}
+                            onClick={searchAvailableRooms}
+                        >
+                            Szukaj
+                        </button>
+                    </div>
                     <div style={styles.roomsGrid}>
                         {rooms.map((room) => (
                             <div key={room.room_id} style={styles.roomCard}>
@@ -776,10 +865,30 @@ function App() {
                                 <button
                                     style={styles.button}
                                     onClick={() => {
+
                                         if (!role) {
                                             setView("login");
                                         } else {
+
+                                            // reset dat
+                                            setRoomForm({
+                                                startDate: "",
+                                                endDate: ""
+                                            });
+
+                                            // reset danych gościa
+                                            setBookingGuest({
+                                                first_name: "",
+                                                last_name: "",
+                                                pesel: "",
+                                                phone_number: "",
+                                                preferences: ""
+                                            });
+
+                                            // ustaw pokój
                                             setSelectedRoom(room);
+
+                                            // przejdź do rezerwacji
                                             setView("roomBooking");
                                         }
                                     }}
@@ -844,6 +953,7 @@ function App() {
                     <input
                         name="date"
                         type="date"
+                        min={today}
                         style={styles.input}
                         value={serviceForm.date}
                         onChange={handleServiceChange}
@@ -1706,6 +1816,7 @@ function App() {
                     </p>
                     <input
                         type="date"
+                        min={today}
                         style={styles.input}
                         value={roomForm.startDate}
                         onChange={(e) =>
@@ -1715,13 +1826,78 @@ function App() {
 
                     <input
                         type="date"
+                        min={today}
                         style={styles.input}
                         value={roomForm.endDate}
                         onChange={(e) =>
                             setRoomForm({ ...roomForm, endDate: e.target.value })
                         }
                     />
+                    {(role === "admin" || role === "receptionist") && (
+                        <>
+                            <h3>Dane gościa</h3>
 
+                            <input
+                                placeholder="Imię"
+                                style={styles.input}
+                                value={bookingGuest.first_name}
+                                onChange={(e) =>
+                                    setBookingGuest({
+                                        ...bookingGuest,
+                                        first_name: e.target.value
+                                    })
+                                }
+                            />
+
+                            <input
+                                placeholder="Nazwisko"
+                                style={styles.input}
+                                value={bookingGuest.last_name}
+                                onChange={(e) =>
+                                    setBookingGuest({
+                                        ...bookingGuest,
+                                        last_name: e.target.value
+                                    })
+                                }
+                            />
+
+                            <input
+                                placeholder="PESEL"
+                                style={styles.input}
+                                value={bookingGuest.pesel}
+                                onChange={(e) =>
+                                    setBookingGuest({
+                                        ...bookingGuest,
+                                        pesel: e.target.value
+                                    })
+                                }
+                            />
+
+                            <input
+                                placeholder="Telefon"
+                                style={styles.input}
+                                value={bookingGuest.phone_number}
+                                onChange={(e) =>
+                                    setBookingGuest({
+                                        ...bookingGuest,
+                                        phone_number: e.target.value
+                                    })
+                                }
+                            />
+
+                            <input
+                                placeholder="Preferencje"
+                                style={styles.input}
+                                value={bookingGuest.preferences}
+                                onChange={(e) =>
+                                    setBookingGuest({
+                                        ...bookingGuest,
+                                        preferences: e.target.value
+                                    })
+                                }
+                            />
+                        </>
+                    )}
                     <button
                         style={styles.button}
                         onClick={async () => {
@@ -1735,24 +1911,69 @@ function App() {
                                         room_id: selectedRoom.room_id,
                                         start_date: roomForm.startDate,
                                         end_date: roomForm.endDate,
-                                        email: user.email,
-                                        role: role
+
+                                        role: role,
+
+                                        main_guest_id:
+                                            role === "guest"
+                                                ? user.guest_id
+                                                : null,
+
+                                        email:
+                                            role === "guest"
+                                                ? user.email
+                                                : null,
+
+                                        first_name:
+                                            role === "guest"
+                                                ? user.first_name
+                                                : bookingGuest.first_name,
+
+                                        last_name:
+                                            role === "guest"
+                                                ? user.last_name
+                                                : bookingGuest.last_name,
+
+                                        pesel:
+                                            role === "guest"
+                                                ? user.pesel
+                                                : bookingGuest.pesel,
+
+                                        phone_number:
+                                            role === "guest"
+                                                ? user.phone_number
+                                                : bookingGuest.phone_number,
+
+                                        preferences:
+                                            role === "guest"
+                                                ? user.preferences
+                                                : bookingGuest.preferences
                                     })
                                 });
 
                                 const data = await res.json();
 
                                 if (!res.ok) {
-                                    alert("Błąd rezerwacji");
+
+                                    if (res.status === 409) {
+                                        alert("Pokój niedostępny w danym terminie");
+                                    } else {
+                                        alert(data.detail || "Błąd rezerwacji");
+                                    }
+
                                     return;
                                 }
-
                                 setBookingPrice(totalPrice);
                                 setBookingSuccess(true);
 
                             } catch (err) {
                                 console.error(err);
-                                alert("Błąd połączenia");
+
+                                if (err.message.includes("409")) {
+                                    alert("Pokój niedostępny w danym terminie");
+                                } else {
+                                    alert("Błąd połączenia");
+                                }
                             }
                         }}
                     >
