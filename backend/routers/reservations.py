@@ -1,8 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from psycopg2.extras import RealDictCursor
 from database import get_db
 from datetime import datetime, timedelta
+from fpdf import FPDF
 import schemas
+
+def strip_accents(text):
+    if not isinstance(text, str):
+        return str(text)
+    replacements = {
+        'ą': 'a', 'ć': 'c', 'ę': 'e', 'ł': 'l', 'ń': 'n', 'ó': 'o', 'ś': 's', 'ź': 'z', 'ż': 'z',
+        'Ą': 'A', 'Ć': 'C', 'Ę': 'E', 'Ł': 'L', 'Ń': 'N', 'Ó': 'O', 'Ś': 'S', 'Ź': 'Z', 'Ż': 'Z'
+    }
+    for search, replace in replacements.items():
+        text = text.replace(search, replace)
+    return text
 
 router = APIRouter(
     prefix="/reservations",
@@ -410,5 +422,59 @@ def cancel_reservation(reservationId: int, conn=Depends(get_db)):
         print("DB ERROR:", e)
         raise HTTPException(status_code=500, detail=str(e))
 
+    finally:
+        cur.close()
+
+@router.get("/{id}/confirmation")
+def generate_confirmation_pdf(id: int, conn = Depends(get_db)):
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT 
+                r.reservation_id, r.start_date, r.end_date, r.status,
+                g.first_name, g.last_name,
+                rm.room_number,
+                rr.actual_price_per_night
+            FROM Reservation r
+            JOIN Guest g ON r.main_guest_id = g.guest_id
+            JOIN Room_reservation rr ON r.reservation_id = rr.reservation_id
+            JOIN Room rm ON rr.room_id = rm.room_id
+            WHERE r.reservation_id = %s
+        """, (id,))
+        
+        data = cur.fetchone()
+
+        if not data:
+            raise HTTPException(status_code=404, detail="Rezerwacja nie istnieje")
+
+        days = (data['end_date'] - data['start_date']).days
+        if days < 1:
+            days = 1
+            
+        total_price = days * data['actual_price_per_night']
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("helvetica", "B", 16)
+        
+        pdf.cell(0, 10, f"POTWIERDZENIE REZERWACJI NR {data['reservation_id']}", ln=1, align="C")
+        pdf.ln(10)
+
+        pdf.set_font("helvetica", "", 12)
+        pdf.cell(0, 10, strip_accents(f"Gosc: {data['first_name']} {data['last_name']}"), ln=1)
+        pdf.cell(0, 10, strip_accents(f"Pokoj: {data['room_number']}"), ln=1)
+        pdf.cell(0, 10, strip_accents(f"Termin pobytu: {data['start_date']} - {data['end_date']} (Liczba nocy: {days})"), ln=1)
+        pdf.cell(0, 10, strip_accents(f"Cena za dobe: {data['actual_price_per_night']} PLN"), ln=1)
+        
+        pdf.ln(5)
+        pdf.set_font("helvetica", "B", 14)
+        pdf.cell(0, 10, strip_accents(f"Calkowity koszt pobytu: {total_price:.2f} PLN"), ln=1)
+
+        pdf_bytes = pdf.output(dest='S').encode('latin-1', errors='replace')
+
+        headers = {
+            "Content-Disposition": f"attachment; filename=potwierdzenie_{data['reservation_id']}.pdf"
+        }
+        return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
     finally:
         cur.close()

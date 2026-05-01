@@ -357,8 +357,27 @@ function App() {
         }).then(() => fetchReservations());
     };
 
-    const downloadConfirmation = (id) => {
-        window.open(`${API}/reservations/${id}/confirmation`);
+    const downloadConfirmation = async (reservationId) => {
+        try {
+            const response = await fetch(`${API}/reservations/${reservationId}/confirmation`);
+            
+            if (!response.ok) {
+                throw new Error("Nie udało się pobrać potwierdzenia rezerwacji.");
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `potwierdzenie_nr_${reservationId}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error("Błąd pobierania PDF:", error);
+            alert("Wystąpił problem z pobieraniem potwierdzenia.");
+        }
     };
 
     const cancelService = (serviceId) => {
