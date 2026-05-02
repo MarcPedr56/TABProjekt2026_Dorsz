@@ -88,7 +88,6 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
 
         # 🔹 jeśli zwykły użytkownik
         if data.role == "guest":
-
             if not guest:
                 raise HTTPException(
                     status_code=404,
@@ -98,8 +97,7 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
             guest_id = guest["guest_id"]
 
         # 🔹 jeśli admin lub recepcjonista
-        elif data.role in ("admin", "receptionist"):
-
+        elif (data.role in ("admin", "receptionist") and not guest):
             # dodaj nowego gościa
             cur.execute("""
                 INSERT INTO Guest (
@@ -119,8 +117,8 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
                 data.preferences
             ))
 
-            new_guest = cur.fetchone()
-            guest_id = new_guest["guest_id"]
+            guest = cur.fetchone()
+            guest_id = guest["guest_id"]
 
         # 🔹 pobierz cenę pokoju
         cur.execute("""
@@ -142,15 +140,12 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
         # 🔹 sprawdź czy pokój jest wolny
         cur.execute("""
             SELECT 1
-            FROM Reservation r
+            FROM Reservation re
             JOIN Room_Reservation rr
-                ON rr.reservation_id = r.reservation_id
+                ON rr.reservation_id = re.reservation_id
             WHERE rr.room_id = %s
-              AND r.status != 'cancelled'
-              AND (
-                    %s < r.end_date
-                AND %s > r.start_date
-              )
+                AND re.status != 'cancelled'
+                AND (re.start_date, re.end_date) OVERLAPS (%s, %s);
         """, (
             data.room_id,
             data.start_date,
@@ -382,16 +377,17 @@ def end_reservation(id: int, conn=Depends(get_db)):
         cur.close()
 
 
-@router.post("/{id}/cancel")
-def cancel_reservation(reservationId: int, conn=Depends(get_db)):
+@router.put("/{id}/cancel")
+def cancel_reservation(id: int, conn=Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         # 🔹 znajdź rezerwacje
         cur.execute("""
-            SELECT r.reservation_id, r.room_id
-            FROM Reservation r
-            WHERE r.reservation_id = %s
-        """, (reservationId,))
+            SELECT re.reservation_id, rr.room_id
+            FROM Reservation re
+            JOIN Room_reservation rr ON re.reservation_id = rr.reservation_id
+            WHERE re.reservation_id = %s
+        """, (id,))
         reservation = cur.fetchone()
 
         if not reservation:

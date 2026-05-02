@@ -106,8 +106,8 @@ class RoomAvailabilityResponse(BaseSchema):
 # 6. REZERWACJA (Reservation)
 # ==========================
 class ReservationBase(BaseSchema):
-    start_date: datetime
-    end_date: datetime
+    start_date: date
+    end_date: date
     status: str = "created"
     type: Optional[str] = None
 
@@ -117,8 +117,8 @@ class ReservationCreate(ReservationBase):
     email: Optional[str] = None
     role: str
     # dodatkowe pola do wypełnienia w przypadku wykonywania rezerwacji na kogoś
-    first_name: Optional[str]   = Field(..., max_length=50)
-    last_name: Optional[str]    = Field(..., max_length=100)
+    first_name: Optional[str]   = Field(None, max_length=50)
+    last_name: Optional[str]    = Field(None, max_length=100)
     pesel: Optional[str]        = Field(None, max_length=20)
     phone_number: Optional[str] = Field(None, max_length=20)
     preferences: Optional[str]  = None
