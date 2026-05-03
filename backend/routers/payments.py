@@ -6,6 +6,16 @@ from database import get_db
 import os
 import schemas
 
+def strip_accents(text):
+    if not isinstance(text, str):
+        return str(text)
+    replacements = {
+        'ą': 'a', 'ć': 'c', 'ę': 'e', 'ł': 'l', 'ń': 'n', 'ó': 'o', 'ś': 's', 'ź': 'z', 'ż': 'z',
+        'Ą': 'A', 'Ć': 'C', 'Ę': 'E', 'Ł': 'L', 'Ń': 'N', 'Ó': 'O', 'Ś': 'S', 'Ź': 'Z', 'Ż': 'Z'
+    }
+    for search, replace in replacements.items():
+        text = text.replace(search, replace)
+    return text
 
 router = APIRouter(
     prefix="/payments",
@@ -29,25 +39,38 @@ def get_payments(conn = Depends(get_db)):
 
 @router.post("/", response_model=schemas.PaymentResponse)
 def add_payment(payment: schemas.PaymentCreate, conn = Depends(get_db)):
-    """Dodaje nową opłatę do bazy"""
+    """Dodaje nową opłatę do bazy i generuje numer faktury"""
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
+        # 1. Wstawiamy płatność do bazy BEZ numeru faktury, żeby uzyskać z bazy payment_id
         cur.execute("""
-            INSERT INTO Payment (reservation_id, amount, method, status, type, invoice_number) 
-            VALUES (%s, %s, %s, %s, %s, %s) 
-            RETURNING payment_id, reservation_id, amount, method, status, type, invoice_number, payment_date;
+            INSERT INTO Payment (reservation_id, amount, method, status, type) 
+            VALUES (%s, %s, %s, %s, %s) 
+            RETURNING payment_id;
         """, (
             payment.reservation_id,
             payment.amount,
             payment.method,
             payment.status,
-            payment.type,
-            payment.invoice_number
+            payment.type
         ))
+        
+        payment_id = cur.fetchone()['payment_id']
+        
+        now = datetime.now()
+        invoice_num = f"FV/{now.year}/{now.strftime('%m')}/{payment_id}"
+        
+        cur.execute("""
+            UPDATE Payment 
+            SET invoice_number = %s 
+            WHERE payment_id = %s 
+            RETURNING payment_id, reservation_id, amount, method, status, type, invoice_number, payment_date;
+        """, (invoice_num, payment_id))
         
         new_payment = cur.fetchone()
         conn.commit()
         return new_payment
+
     except Exception as e:
         conn.rollback()
         print(f"Błąd SQL: {e}")
@@ -144,9 +167,9 @@ def generate_invoice_pdf(id: int, conn = Depends(get_db)):
         
         pdf.set_font("helvetica", "B", 16)
         
-        pdf.cell(0, 10, f"FAKTURA NR: {data['invoice_number']}", ln=1, align="C")
+        pdf.cell(0, 10, strip_accents(f"FAKTURA NR: {data['invoice_number']}"), ln=1, align="C")
         pdf.set_font("helvetica", "", 10)
-        pdf.cell(0, 10, f"Data wystawienia: {data['payment_date']}", ln=1, align="R")
+        pdf.cell(0, 10, strip_accents(f"Data wystawienia: {data['payment_date']}"), ln=1, align="R")
         pdf.ln(10) 
 
         pdf.set_font("helvetica", "B", 12)
@@ -155,7 +178,7 @@ def generate_invoice_pdf(id: int, conn = Depends(get_db)):
         
         pdf.set_font("helvetica", "", 10)
         pdf.cell(95, 6, "Hotel Bursztyn", ln=0, align="L")
-        pdf.cell(95, 6, f"{data['first_name']} {data['last_name']}", ln=1, align="R")
+        pdf.cell(95, 6, strip_accents(f"{data['first_name']} {data['last_name']}"), ln=1, align="R")
         pdf.cell(95, 6, "ul. Wakacyjna 12, 80-000 Gdansk", ln=0, align="L")
         pdf.cell(95, 6, f"PESEL: {data['pesel']}", ln=1, align="R")
         pdf.ln(15)
@@ -167,22 +190,24 @@ def generate_invoice_pdf(id: int, conn = Depends(get_db)):
         pdf.cell(40, 10, "Razem", border=1, ln=1, align="R")
 
         pdf.set_font("helvetica", "", 10)
-        pdf.cell(80, 10, f"Pokoj {data['room_number']} ({data['room_type']})", border=1, ln=0)
+        pdf.cell(80, 10, strip_accents(f"Pokoj {data['room_number']} ({data['room_type']})"), border=1, ln=0)
         pdf.cell(30, 10, "1", border=1, ln=0, align="C")
         pdf.cell(40, 10, "-", border=1, ln=0, align="R") 
         pdf.cell(40, 10, f"{data['amount']} PLN", border=1, ln=1, align="R")
 
         for s in services:
-            pdf.cell(80, 10, s['name'], border=1, ln=0)
+            pdf.cell(80, 10, strip_accents(s['name']), border=1, ln=0)
             pdf.cell(30, 10, str(s['quantity']), border=1, ln=0, align="C")
             pdf.cell(40, 10, f"{s['actual_price'] / s['quantity']:.2f} PLN", border=1, ln=0, align="R")
             pdf.cell(40, 10, f"{s['actual_price']} PLN", border=1, ln=1, align="R")
 
+        total_amount = float(data['amount']) + sum(float(s['actual_price']) for s in services)
+
         pdf.ln(10)
         pdf.set_font("helvetica", "B", 14)
-        pdf.cell(0, 10, f"RAZEM DO ZAPLATY: {data['amount']} PLN", ln=1, align="R")
+        pdf.cell(0, 10, f"RAZEM DO ZAPLATY: {total_amount:.2f} PLN", ln=1, align="R")
 
-        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+        pdf_bytes = pdf.output(dest='S').encode('latin-1', errors='replace')
         
         headers = {
             "Content-Disposition": f"attachment; filename=faktura_{data['invoice_number']}.pdf"

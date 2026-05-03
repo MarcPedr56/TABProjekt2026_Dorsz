@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from psycopg2.extras import RealDictCursor
 from database import get_db
 import schemas
+from datetime import date
+from fastapi import Query
 
 router = APIRouter(
     prefix="/rooms",
@@ -13,6 +15,28 @@ def get_rooms(conn = Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT * FROM Room ORDER BY room_id;")
     return cur.fetchall()
+
+@router.get("/{room_number}/availability", response_model=list[schemas.RoomAvailabilityResponse])
+def get_room_availability(room_number: str, data: schemas.RoomAvailability, conn = Depends(get_db)):
+    """Pobiera status pokoju po jego id"""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT re.reservation_id, re.start_date, re.end_date, re.status
+            FROM Reservation re
+            JOIN Room_reservation rr ON re.reservation_id = rr.reservation_id
+            JOIN Room ro ON rr.room_id = rr.room_id
+            WHERE ro.room_number = %s
+                    AND (SELECT (re.start_date, re.end_date) 
+                        OVERLAPS (%s, %s));
+        """, (room_number, data.start_date, data.end_date))
+        new_room = cur.fetchone()
+        
+        return new_room
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
 
 @router.post("/", response_model=schemas.RoomResponse)
 def add_room(room: schemas.RoomCreate, conn = Depends(get_db)):
@@ -28,5 +52,41 @@ def add_room(room: schemas.RoomCreate, conn = Depends(get_db)):
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
+
+@router.get("/available")
+def get_available_rooms(
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    conn=Depends(get_db)
+):
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT *
+            FROM Room r
+            WHERE r.room_id NOT IN (
+                SELECT rr.room_id
+                FROM Room_reservation rr
+                JOIN Reservation re
+                    ON rr.reservation_id = re.reservation_id
+                WHERE
+                    re.status != 'cancelled'
+                    AND (
+                        re.start_date,
+                        re.end_date
+                    ) OVERLAPS (%s, %s)
+            )
+            ORDER BY r.room_id;
+        """, (start_date, end_date))
+
+        rooms = cur.fetchall()
+        return rooms
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
     finally:
         cur.close()

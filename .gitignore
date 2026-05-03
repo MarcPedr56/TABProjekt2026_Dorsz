@@ -1,5 +1,14 @@
+# Środowiska wirtualne i biblioteki
 backend/venv/
-backend/__pycache__/
-backend/.env
 frontend/node_modules/
+
+# Pliki binarne Pythona (teraz złapie wszystkie podfoldery)
+**/__pycache__/
+*.pyc
+
+# Folder Visual Studio (który widzieliśmy na czerwono)
+.vs/
+
+# Tajne dane i buildy
+backend/.env
 frontend/dist/

@@ -92,8 +92,15 @@ class RoomBase(BaseSchema):
 class RoomCreate(RoomBase):
     pass
 
+class RoomAvailability(BaseSchema):
+    start_date: date
+    end_date:   date
+
 class RoomResponse(RoomBase):
     room_id: int
+
+class RoomAvailabilityResponse(BaseSchema):
+    status: str
 
 # ==========================
 # 6. REZERWACJA (Reservation)
@@ -105,10 +112,16 @@ class ReservationBase(BaseSchema):
     type: Optional[str] = None
 
 class ReservationCreate(ReservationBase):
-    main_guest_id: int
+    main_guest_id: Optional[int] = None
     room_id: int
-    email: str
+    email: Optional[str] = None
     role: str
+    # dodatkowe pola do wypełnienia w przypadku wykonywania rezerwacji na kogoś
+    first_name: Optional[str]   = Field(..., max_length=50)
+    last_name: Optional[str]    = Field(..., max_length=100)
+    pesel: Optional[str]        = Field(None, max_length=20)
+    phone_number: Optional[str] = Field(None, max_length=20)
+    preferences: Optional[str]  = None
 
 class ReservationResponse(ReservationBase):
     reservation_id: int
@@ -196,12 +209,12 @@ class PaymentUpdate(BaseSchema):
 # 11. ZADANIE HOTELOWE (Hotel_Task)
 # ==========================
 class HotelTaskBase(BaseSchema):
-    room_id: Optional[int] = None
+    room_number: Optional[int] = None
     description: str
-    start_date: Optional[date]
-    end_date: Optional[date]
-    status: Optional[str]
-    priority_level: Optional[str]
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    status: Optional[str] = None
+    priority_level: Optional[str] = None
 
 class HotelTaskCreate(HotelTaskBase):
     pass

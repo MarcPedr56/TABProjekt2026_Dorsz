@@ -1,8 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from psycopg2.extras import RealDictCursor
 from database import get_db
 from datetime import datetime, timedelta
+from fpdf import FPDF
 import schemas
+
+def strip_accents(text):
+    if not isinstance(text, str):
+        return str(text)
+    replacements = {
+        'ą': 'a', 'ć': 'c', 'ę': 'e', 'ł': 'l', 'ń': 'n', 'ó': 'o', 'ś': 's', 'ź': 'z', 'ż': 'z',
+        'Ą': 'A', 'Ć': 'C', 'Ę': 'E', 'Ł': 'L', 'Ń': 'N', 'Ó': 'O', 'Ś': 'S', 'Ź': 'Z', 'Ż': 'Z'
+    }
+    for search, replace in replacements.items():
+        text = text.replace(search, replace)
+    return text
 
 router = APIRouter(
     prefix="/reservations",
@@ -56,36 +68,112 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
-        # TODO: ustalić konwencję numerowania ID pracowników - adminów i recepcjonnistów
-        guest_id = 0
+        # 🔹 sprawdzenie dat
+        if data.start_date >= data.end_date:
+            raise HTTPException(
+                status_code=422,
+                detail="Data końca musi być późniejsza od daty początku"
+            )
 
-        if (data.role == "guest"):
-            # 🔹 znajdź guest
-            cur.execute("""
-                SELECT g.guest_id
-                FROM Guest g
-                JOIN Account a ON g.guest_id = a.guest_id
-                WHERE a.email = %s
-            """, (data.email,))
-            guest = cur.fetchone()
+        # 🔹 znajdź gościa po emailu
+        cur.execute("""
+            SELECT g.guest_id
+            FROM Guest g
+            JOIN Account a ON g.guest_id = a.guest_id
+            WHERE a.email = %s
+        """, (data.email,))
+
+        guest = cur.fetchone()
+        guest_id = None
+
+        # 🔹 jeśli zwykły użytkownik
+        if data.role == "guest":
 
             if not guest:
-                raise HTTPException(status_code=404, detail="Gość nie istnieje")
+                raise HTTPException(
+                    status_code=404,
+                    detail="Gość nie istnieje"
+                )
 
             guest_id = guest["guest_id"]
 
+        # 🔹 jeśli admin lub recepcjonista
+        elif data.role in ("admin", "receptionist"):
+
+            # dodaj nowego gościa
+            cur.execute("""
+                INSERT INTO Guest (
+                    first_name,
+                    last_name,
+                    pesel,
+                    phone_number,
+                    preferences
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING guest_id
+            """, (
+                data.first_name,
+                data.last_name,
+                data.pesel,
+                data.phone_number,
+                data.preferences
+            ))
+
+            new_guest = cur.fetchone()
+            guest_id = new_guest["guest_id"]
+
         # 🔹 pobierz cenę pokoju
-        cur.execute("SELECT price_per_night FROM room WHERE room_id = %s", (data.room_id,))
+        cur.execute("""
+            SELECT price_per_night
+            FROM Room
+            WHERE room_id = %s
+        """, (data.room_id,))
+
         room = cur.fetchone()
 
         if not room:
-            raise HTTPException(status_code=404, detail="Pokój nie istnieje")
+            raise HTTPException(
+                status_code=404,
+                detail="Pokój nie istnieje"
+            )
 
         price = room["price_per_night"]
 
+        # 🔹 sprawdź czy pokój jest wolny
+        cur.execute("""
+            SELECT 1
+            FROM Reservation r
+            JOIN Room_Reservation rr
+                ON rr.reservation_id = r.reservation_id
+            WHERE rr.room_id = %s
+              AND r.status != 'cancelled'
+              AND (
+                    %s < r.end_date
+                AND %s > r.start_date
+              )
+        """, (
+            data.room_id,
+            data.start_date,
+            data.end_date
+        ))
+
+        existing_reservation = cur.fetchone()
+
+        if existing_reservation:
+            raise HTTPException(
+                status_code=409,
+                detail="Pokój jest już zarezerwowany w podanym terminie"
+            )
+
         # 🔹 utwórz rezerwację
         cur.execute("""
-            INSERT INTO Reservation (main_guest_id, start_date, end_date, status, type)
+            INSERT INTO Reservation (
+                main_guest_id,
+                start_date,
+                end_date,
+                status,
+                type
+            )
             VALUES (%s, %s, %s, 'created', 'individual')
             RETURNING reservation_id
         """, (
@@ -94,12 +182,16 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
             data.end_date
         ))
 
-        res = cur.fetchone()
-        reservation_id = res["reservation_id"]
+        reservation = cur.fetchone()
+        reservation_id = reservation["reservation_id"]
 
-        # 🔹 powiąż pokój
+        # 🔹 powiąż pokój z rezerwacją
         cur.execute("""
-            INSERT INTO room_reservation (room_id, reservation_id, actual_price_per_night)
+            INSERT INTO Room_Reservation (
+                room_id,
+                reservation_id,
+                actual_price_per_night
+            )
             VALUES (%s, %s, %s)
         """, (
             data.room_id,
@@ -114,10 +206,18 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
             "price_per_night": price
         }
 
+    except HTTPException:
+        conn.rollback()
+        raise
+
     except Exception as e:
         conn.rollback()
         print("DB ERROR:", e)
-        raise HTTPException(status_code=500, detail=str(e))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
     finally:
         cur.close()
@@ -138,9 +238,31 @@ def extend_reservation(id: int, data: schemas.ReservationUpdate, conn=Depends(ge
 
         if not reservation:
             raise HTTPException(status_code=404, detail="Rezerwacja nie istnieje")
+        # 🔹 sprawdź konflikt terminów
+        cur.execute("""
+            SELECT 1
+            FROM reservation r
+            JOIN room_reservation rr
+                ON rr.reservation_id = r.reservation_id
+            WHERE rr.room_id = %s
+              AND r.status != 'cancelled'
+              AND (
+                    %s < r.end_date
+                AND %s > r.start_date
+              )
+        """, (
+            data.room_id,
+            data.start_date,
+            data.end_date
+        ))
 
-        #print(data.end_date.strftime("%Y-%M-%D") + " <= " + end_date)
+        existing_reservation = cur.fetchone()
 
+        if existing_reservation:
+            raise HTTPException(
+                status_code=409,
+                detail="Pokój jest już zarezerwowany w podanym terminie"
+            )
         # sprawdź, czy data jest odpowiednia
         if data.end_date <= end_date:
             raise HTTPException(status_code=422, detail="Przedłużona data nie może być wcześniejsza lub identyczna do poprzedniej")
@@ -244,9 +366,9 @@ def end_reservation(id: int, conn=Depends(get_db)):
             reservation["room_id"],
             "sprzątanie po zakończonej rezerwacji",
             datetime.today().strftime("%Y-%M-%D"),
-            (datetime.today() + timedelta(days=3)).strftime("%Y-%M-%D"),
+            datetime.today().strftime("%Y-%M-%D"),
             "created",
-            "normal"
+            "high"
         ))
 
         conn.commit()
@@ -300,5 +422,59 @@ def cancel_reservation(reservationId: int, conn=Depends(get_db)):
         print("DB ERROR:", e)
         raise HTTPException(status_code=500, detail=str(e))
 
+    finally:
+        cur.close()
+
+@router.get("/{id}/confirmation")
+def generate_confirmation_pdf(id: int, conn = Depends(get_db)):
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT 
+                r.reservation_id, r.start_date, r.end_date, r.status,
+                g.first_name, g.last_name,
+                rm.room_number,
+                rr.actual_price_per_night
+            FROM Reservation r
+            JOIN Guest g ON r.main_guest_id = g.guest_id
+            JOIN Room_reservation rr ON r.reservation_id = rr.reservation_id
+            JOIN Room rm ON rr.room_id = rm.room_id
+            WHERE r.reservation_id = %s
+        """, (id,))
+        
+        data = cur.fetchone()
+
+        if not data:
+            raise HTTPException(status_code=404, detail="Rezerwacja nie istnieje")
+
+        days = (data['end_date'] - data['start_date']).days
+        if days < 1:
+            days = 1
+            
+        total_price = days * data['actual_price_per_night']
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("helvetica", "B", 16)
+        
+        pdf.cell(0, 10, f"POTWIERDZENIE REZERWACJI NR {data['reservation_id']}", ln=1, align="C")
+        pdf.ln(10)
+
+        pdf.set_font("helvetica", "", 12)
+        pdf.cell(0, 10, strip_accents(f"Gosc: {data['first_name']} {data['last_name']}"), ln=1)
+        pdf.cell(0, 10, strip_accents(f"Pokoj: {data['room_number']}"), ln=1)
+        pdf.cell(0, 10, strip_accents(f"Termin pobytu: {data['start_date']} - {data['end_date']} (Liczba nocy: {days})"), ln=1)
+        pdf.cell(0, 10, strip_accents(f"Cena za dobe: {data['actual_price_per_night']} PLN"), ln=1)
+        
+        pdf.ln(5)
+        pdf.set_font("helvetica", "B", 14)
+        pdf.cell(0, 10, strip_accents(f"Calkowity koszt pobytu: {total_price:.2f} PLN"), ln=1)
+
+        pdf_bytes = pdf.output(dest='S').encode('latin-1', errors='replace')
+
+        headers = {
+            "Content-Disposition": f"attachment; filename=potwierdzenie_{data['reservation_id']}.pdf"
+        }
+        return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
     finally:
         cur.close()

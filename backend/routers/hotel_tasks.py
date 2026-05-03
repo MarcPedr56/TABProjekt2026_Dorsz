@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from psycopg2.extras import RealDictCursor
-from datetime import datetime
+from datetime import datetime, date
+from typing import cast
 from database import get_db
 import schemas
 
@@ -55,8 +56,8 @@ def create_task(data: schemas.HotelTaskCreate, conn=Depends(get_db)):
         cur.execute("""
             SELECT r.room_id
             FROM Room r
-            WHERE r.room_id = %s
-        """, (data.room_id,))
+            WHERE r.room_number = %s
+        """, (str(data.room_number),))
         room = cur.fetchone()
 
         if not room:
@@ -65,23 +66,21 @@ def create_task(data: schemas.HotelTaskCreate, conn=Depends(get_db)):
         # sprawdź, czy daty zostały odpowiednio podane, jeżeli obie zostały podane
         if data.start_date and data.end_date:
             if not data.start_date <= data.end_date:
-                raise HTTPException(status_code=422, detail="Data zakończenia musi być w tem samym dniu lub później, niż data rozpoczęcia")
-
-        price = room["price_per_night"]
+                raise HTTPException(status_code=422, detail="Data zakończenia musi być w tym samym dniu lub później, niż data rozpoczęcia")
 
         # 🔹 utwórz pracę hotelową
         cur.execute("""
             INSERT INTO Hotel_task 
                     (room_id, description, start_date, end_date, status, priority_level)
-            VALUES (%s, %s, %s, %s, 'created', %s')
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING task_id
         """, (
-            data.room_id,
+            room["room_id"],
             data.description,
-            (datetime.today().strftime("%Y-%M-%D"), data.start_date)[data.start_date != None],
-            (datetime.today().strftime("%Y-%M-%D"), data.end_date)[data.end_date != None],
-            ("created", data.status)[data.status != None],
-            ("normal", data.priority_level)[data.status != None]
+            (datetime.today().strftime("%Y-%m-%d"), data.start_date)[data.start_date is not None],
+            (datetime.today().strftime("%Y-%m-%d"), data.end_date)[data.end_date is not None],
+            ("todo", data.status)[data.status is not None],
+            ("normal", data.priority_level)[data.status is not None]
         ))
 
         task_id = cur.fetchone()["task_id"]
@@ -184,7 +183,7 @@ def assign_task(id: int, data: schemas.HotelTaskAssign, conn=Depends(get_db)):
         """, (
             data.employee_id,
             id,
-            (datetime.today().strftime("%Y-%M-%D"), data.execution_date)[data.execution_date != None],
+            (datetime.today().strftime("%Y-%m-%d"), data.execution_date)[data.execution_date != None],
         ))
 
         conn.commit()
