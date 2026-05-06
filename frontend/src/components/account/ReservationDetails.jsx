@@ -138,7 +138,7 @@ const ReservationDetails = () => {
                                 <td>{s.date}</td>
                                 <td>{s.status}</td>
                                 <td>
-                                    <button className="button" style={{ padding: "5px 10px", width: "auto" }} onClick={() => cancelService(s.service_id)}>
+                                    <button className="button" style={{ padding: "5px 10px", width: "auto" }} onClick={() => cancelService(s.usage_id)}>
                                         Anuluj
                                     </button>
                                 </td>

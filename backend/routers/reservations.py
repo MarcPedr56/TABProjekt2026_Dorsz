@@ -33,30 +33,62 @@ def get_all_reservations(conn = Depends(get_db)):
     finally:
         cur.close()
 
-@router.get("/guest/{guest_id}", response_model=list[schemas.ReservationResponse])
-def get_guest_reservations(guest_id: int, conn = Depends(get_db)):
+@router.get("/guest/{guest_id}/{active}", response_model=list[schemas.ReservationResponse])
+def get_guest_reservations(guest_id: int, active: str, conn = Depends(get_db)):
     """Pobiera rezerwacje po ID Gościa (Dla historii w panelu Admina)"""
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cur.execute("SELECT * FROM Reservation WHERE main_guest_id = %s ORDER BY start_date DESC;", (guest_id,))
+        if active == "true":
+            cur.execute("""
+                SELECT * 
+                FROM Reservation 
+                WHERE main_guest_id = %s
+                    AND (end_date > cast(now() as date)
+                        OR (end_date = cast(now() as date)
+                        AND NOW() < cast(cast(now() as date) as timestamp) + INTERVAL '10 hours'))
+                ORDER BY start_date DESC;
+                """, 
+            (guest_id,))
+        else:
+            cur.execute("""
+                SELECT * 
+                FROM Reservation 
+                WHERE main_guest_id = %s
+                ORDER BY start_date DESC;
+                """, 
+            (guest_id,))
+
         return cur.fetchall()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
 
-@router.get("/user/{email}", response_model=list[schemas.ReservationResponse])
-def get_user_reservations(email: str, conn = Depends(get_db)):
+@router.get("/user/{email}/{active}", response_model=list[schemas.ReservationResponse])
+def get_user_reservations(email: str, active: str, conn = Depends(get_db)):
     """Pobiera rezerwacje po emailu"""
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cur.execute("""
-            SELECT r.* FROM Reservation r
-            JOIN Guest g ON r.main_guest_id = g.guest_id
-            JOIN Account a ON g.guest_id = a.guest_id
-            WHERE a.email = %s
-            ORDER BY r.start_date DESC;
-        """, (email,))
+        if active == "true":
+            cur.execute("""
+                SELECT r.* FROM Reservation r
+                JOIN Guest g ON r.main_guest_id = g.guest_id
+                JOIN Account a ON g.guest_id = a.guest_id
+                WHERE a.email = %s
+                    AND (r.end_date > cast(now() as date)
+                        OR (r.end_date = cast(now() as date)
+                        AND NOW() < cast(cast(now() as date) as timestamp) + INTERVAL '10 hours'))
+                ORDER BY r.start_date DESC;
+            """, (email,))
+        else:
+            cur.execute("""
+                SELECT r.* FROM Reservation r
+                JOIN Guest g ON r.main_guest_id = g.guest_id
+                JOIN Account a ON g.guest_id = a.guest_id
+                WHERE a.email = %s
+                ORDER BY r.start_date DESC;
+            """, (email,))
+
         return cur.fetchall()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -223,7 +255,7 @@ def extend_reservation(id: int, data: schemas.ReservationUpdate, conn=Depends(ge
     try:
         # 🔹 znajdź rezerwacje
         cur.execute("""
-            SELECT r.reservation_id, end_date
+            SELECT r.reservation_id, start_date, end_date
             FROM Reservation r
             WHERE r.reservation_id = %s
         """, (id,))
@@ -246,8 +278,8 @@ def extend_reservation(id: int, data: schemas.ReservationUpdate, conn=Depends(ge
                 AND %s > r.start_date
               )
         """, (
-            data.room_id,
-            data.start_date,
+            id,
+            reservation["start_date"],
             data.end_date
         ))
 
@@ -360,8 +392,8 @@ def end_reservation(id: int, conn=Depends(get_db)):
         """, (
             reservation["room_id"],
             "sprzątanie po zakończonej rezerwacji",
-            datetime.today().strftime("%Y-%M-%D"),
-            datetime.today().strftime("%Y-%M-%D"),
+            datetime.today().strftime("%Y-%m-%d"),
+            datetime.today().strftime("%Y-%m-%d"),
             "created",
             "high"
         ))
@@ -383,7 +415,7 @@ def cancel_reservation(id: int, conn=Depends(get_db)):
     try:
         # 🔹 znajdź rezerwacje
         cur.execute("""
-            SELECT re.reservation_id, rr.room_id
+            SELECT re.reservation_id, rr.room_id, re.status
             FROM Reservation re
             JOIN Room_reservation rr ON re.reservation_id = rr.reservation_id
             WHERE re.reservation_id = %s
@@ -392,6 +424,9 @@ def cancel_reservation(id: int, conn=Depends(get_db)):
 
         if not reservation:
             raise HTTPException(status_code=404, detail="Rezerwacja nie istnieje")
+        
+        if reservation["status"] not in ("created", "confirmed"):
+            raise HTTPException(status_code=422, detail="Zakaz anulowania rezerwacji, która już została rozpoczęta")
 
         # 🔹 usuń rezerwację
         cur.execute("""

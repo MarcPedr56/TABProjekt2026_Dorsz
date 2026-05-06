@@ -14,7 +14,7 @@ const MyReservations = () => {
     useEffect(() => {
         if (!user || !user.email) return;
 
-        fetch(`${API}/reservations/user/${user.email}`)
+        fetch(`${API}/reservations/user/${user.email}/false`)
             .then(res => res.json())
             .then(data => {
                 setReservations(Array.isArray(data) ? data : []);
