@@ -14,7 +14,7 @@ const ServiceBooking = () => {
     const selectedService = SERVICES_DATA.find(s => s.id === parseInt(id));
 
     const [form, setForm] = useState({
-        date: "",
+        date: today.toString(),
         time: "",
         quantity: 1,
         reservationId: ""
@@ -22,31 +22,37 @@ const ServiceBooking = () => {
 
     const user = useAuthStore(state => state.user);
     
-    useEffect(() => {
-        if (!user || !user.email) return;
-
-        // Dociąganie aktywnych rezerwacji użytkownika
-        fetch(`${API}/reservations/user/${user.email}/true`)
-            .then(res => res.json())
-            .then(data => setReservations(Array.isArray(data) ? data : []))
-            .catch(err => console.error(err));
-    }, [user.email, navigate]);
-    
     const [successMsg, setSuccessMsg] = useState(null);
 
     if (!selectedService) return <p>Nie znaleziono usługi.</p>;
 
     const calculatedPrice = (Number(form.quantity) || 1) * selectedService.price;
 
+    useEffect(() => {
+        if (!user || !user.email) {
+            navigate("/services");
+            return;
+        }
+
+        // Dociąganie aktywnych rezerwacji użytkownika
+        fetch(`${API}/reservations/user/${user.email}/true`)
+            .then(res => res.json())
+            .then(data => setReservations(Array.isArray(data) ? data : []))
+            .catch(err => console.error(err));
+    }, [user]);
+
     const handleChange = (e) => {
         setForm({ ...form, [e.target.name]: e.target.value });
     };
 
     const setReservations = async (data) => {
-        const elem = document.getElementById("activeReservations");
+        const select = document.getElementById("activeReservations");
 
         data.forEach(element => {
-            elem.append("<option>" + data.reservation_id + "</option>");
+            var newOption = document.createElement('option');
+            newOption.value = element.reservation_id;
+            newOption.innerHTML = element.reservation_id;
+            select.appendChild(newOption);
         });
     }
 
@@ -62,7 +68,7 @@ const ServiceBooking = () => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     service_id: selectedService.id,
-                    reservation_id: Number(form.reservationId.value),
+                    reservation_id: Number(form.reservationId),
                     usage_date: form.date.toString(),
                     usage_time: form.time.toString(),
                     quantity: Number(form.quantity || 1)
@@ -95,7 +101,7 @@ const ServiceBooking = () => {
             <input name="date" type="date" min={today} value={form.date} onChange={handleChange} className="input" />
             <input name="time" type="time" value={form.time} onChange={handleChange} className="input" />
             <input name="quantity" type="number" min="1" placeholder="Ilość" value={form.quantity} onChange={handleChange} className="input" />
-            <label for="reservationId">Wybrana aktywna rezerwacja:</label>
+            Wybrana aktywna rezerwacja:
             <select id="activeReservations" name="reservationId" type="number" value={form.reservationId} onChange={handleChange}/>
 
             <button className="button" onClick={handleBook} style={{ width: '100%', marginTop: '10px' }}>
