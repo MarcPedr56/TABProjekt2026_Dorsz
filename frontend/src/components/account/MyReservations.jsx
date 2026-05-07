@@ -35,11 +35,11 @@ const MyReservations = () => {
             <table className="table">
                 <thead>
                     <tr style={{ textAlign: "left" }}>
-                        <th>ID</th>
+                        <th>Numer rezerwacji</th>
                         <th>Data od</th>
                         <th>Data do</th>
                         <th>Status</th>
-                        <th>Pokój (ID)</th>
+                        <th>Pokój</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -54,7 +54,7 @@ const MyReservations = () => {
                                 <td style={{ padding: "10px" }}>{r.start_date ? r.start_date.split('T')[0] : "-"}</td>
                                 <td style={{ padding: "10px" }}>{r.end_date ? r.end_date.split('T')[0] : "-"}</td>
                                 <td style={{ padding: "10px" }}>{r.status}</td>
-                                <td style={{ padding: "10px" }}>{r.room_id || "Brak danych"}</td>
+                                <td style={{ padding: "10px" }}>{r.room_number || "Brak danych"}</td>
                             </tr>
                         ))
                     ) : (

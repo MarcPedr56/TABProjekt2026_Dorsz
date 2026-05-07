@@ -6,6 +6,8 @@ const AdminPayments = () => {
     const [searchPesel, setSearchPesel] = useState("");
     const [payments, setPayments] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [selectedMethods, setSelectedMethods] = useState({});
+    const [selectedStatuses, setSelectedStatuses] = useState({});
 
     const fetchPayments = async () => {
         if (!searchPesel) return;
@@ -21,19 +23,48 @@ const AdminPayments = () => {
         }
     };
 
-    const updatePayment = async (paymentId, updateData) => {
+    const updatePayment = async (paymentId) => {
+
         try {
-            await fetch(`${API}/payments/${paymentId}`, {
+
+            const payment = payments.find(
+                (p) => p.payment_id === paymentId
+            );
+
+            const res = await fetch(`${API}/payments/${paymentId}`, {
                 method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(updateData)
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    method:
+                        selectedMethods[paymentId] || payment.method,
+
+                    status:
+                        selectedStatuses[paymentId] || payment.status
+                })
             });
-            fetchPayments(); // Odśwież listę po zmianie
+
+            const data = await res.json();
+
+            if (!res.ok) {
+
+                alert(data.detail || "Nie udało się zmienić płatności");
+
+                return;
+            }
+
+            alert("Płatność została pomyślnie zaktualizowana");
+
+            fetchPayments();
+
         } catch (err) {
+
             console.error(err);
+
+            alert("Błąd połączenia");
         }
     };
-
     // Funkcja do pobierania faktury (wynieś to kiedyś do pliku utils.js!)
     const downloadInvoice = async (paymentId) => {
         try {
@@ -94,24 +125,78 @@ const AdminPayments = () => {
                                 <td>{p.reservation_id}</td>
                                 
                                 <td>
-                                    <select 
-                                        value={p.method} 
-                                        onChange={(e) => updatePayment(p.payment_id, { method: e.target.value, status: p.status })}
+
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            gap: "10px",
+                                            alignItems: "center"
+                                        }}
                                     >
-                                        <option value="karta">Karta</option>
-                                        <option value="gotowka">Gotówka</option>
-                                        <option value="przelew">Przelew</option>
-                                    </select>
+
+                                        <select
+                                            value={
+                                                selectedMethods[p.payment_id] || p.method
+                                            }
+                                            onChange={(e) =>
+                                                setSelectedMethods({
+                                                    ...selectedMethods,
+                                                    [p.payment_id]: e.target.value
+                                                })
+                                            }
+                                        >
+                                            <option value="karta">Karta</option>
+                                            <option value="gotowka">Gotówka</option>
+                                            <option value="przelew">Przelew</option>
+                                        </select>
+
+                                    </div>
+
                                 </td>
                                 
                                 <td>
-                                    <select 
-                                        value={p.status} 
-                                        onChange={(e) => updatePayment(p.payment_id, { method: p.method, status: e.target.value })}
+
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            gap: "10px",
+                                            alignItems: "center"
+                                        }}
                                     >
-                                        <option value="niezaplacone">Niezapłacone</option>
-                                        <option value="zaplacone">Zapłacone</option>
-                                    </select>
+
+                                        <select
+                                            value={
+                                                selectedStatuses[p.payment_id] || p.status
+                                            }
+                                            onChange={(e) =>
+                                                setSelectedStatuses({
+                                                    ...selectedStatuses,
+                                                    [p.payment_id]: e.target.value
+                                                })
+                                            }
+                                        >
+                                            <option value="niezaplacone">
+                                                Niezapłacone
+                                            </option>
+
+                                            <option value="zaplacone">
+                                                Zapłacone
+                                            </option>
+                                        </select>
+
+                                        <button
+                                            className="button"
+                                            style={{
+                                                width: "auto",
+                                                padding: "5px 10px"
+                                            }}
+                                            onClick={() => updatePayment(p.payment_id)}
+                                        >
+                                            Zapisz
+                                        </button>
+
+                                    </div>
+
                                 </td>
                                 
                                 <td>

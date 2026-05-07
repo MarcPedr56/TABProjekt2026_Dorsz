@@ -65,33 +65,63 @@ def get_guest_reservations(guest_id: int, active: str, conn = Depends(get_db)):
         cur.close()
 
 @router.get("/user/{email}/{active}", response_model=list[schemas.ReservationResponse])
-def get_user_reservations(email: str, active: str, conn = Depends(get_db)):
+def get_user_reservations(email: str, active: str, conn=Depends(get_db)):
     """Pobiera rezerwacje po emailu"""
+
     cur = conn.cursor(cursor_factory=RealDictCursor)
+
     try:
+
         if active == "true":
+
             cur.execute("""
-                SELECT r.* FROM Reservation r
-                JOIN Guest g ON r.main_guest_id = g.guest_id
-                JOIN Account a ON g.guest_id = a.guest_id
+                SELECT 
+                    r.*,
+                    rm.room_number
+                FROM Reservation r
+                JOIN Guest g 
+                    ON r.main_guest_id = g.guest_id
+                JOIN Account a 
+                    ON g.guest_id = a.guest_id
+                JOIN Room_Reservation rr
+                    ON rr.reservation_id = r.reservation_id
+                JOIN Room rm
+                    ON rm.room_id = rr.room_id
                 WHERE a.email = %s
-                    AND (r.end_date > cast(now() as date)
-                        OR (r.end_date = cast(now() as date)
-                        AND NOW() < cast(cast(now() as date) as timestamp) + INTERVAL '10 hours'))
+                    AND (
+                        r.end_date > CAST(NOW() AS date)
+                        OR (
+                            r.end_date = CAST(NOW() AS date)
+                            AND NOW() < CAST(CAST(NOW() AS date) AS timestamp) + INTERVAL '10 hours'
+                        )
+                    )
                 ORDER BY r.start_date DESC;
             """, (email,))
+
         else:
+
             cur.execute("""
-                SELECT r.* FROM Reservation r
-                JOIN Guest g ON r.main_guest_id = g.guest_id
-                JOIN Account a ON g.guest_id = a.guest_id
+                SELECT 
+                    r.*,
+                    rm.room_number
+                FROM Reservation r
+                JOIN Guest g 
+                    ON r.main_guest_id = g.guest_id
+                JOIN Account a 
+                    ON g.guest_id = a.guest_id
+                JOIN Room_Reservation rr
+                    ON rr.reservation_id = r.reservation_id
+                JOIN Room rm
+                    ON rm.room_id = rr.room_id
                 WHERE a.email = %s
                 ORDER BY r.start_date DESC;
             """, (email,))
 
         return cur.fetchall()
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
     finally:
         cur.close()
 
@@ -252,105 +282,195 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
 @router.put("/{id}/extend")
 def extend_reservation(id: int, data: schemas.ReservationUpdate, conn=Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
+
     try:
-        # 🔹 znajdź rezerwacje
+        # 🔹 pobierz rezerwację + numer pokoju
         cur.execute("""
-            SELECT r.reservation_id, start_date, end_date
+            SELECT 
+                r.reservation_id,
+                r.start_date,
+                r.end_date,
+                rr.room_id
             FROM Reservation r
+            JOIN Room_Reservation rr
+                ON rr.reservation_id = r.reservation_id
             WHERE r.reservation_id = %s
         """, (id,))
 
         reservation = cur.fetchone()
-        end_date = reservation["end_date"]
 
         if not reservation:
-            raise HTTPException(status_code=404, detail="Rezerwacja nie istnieje")
-        # 🔹 sprawdź konflikt terminów
+            raise HTTPException(
+                status_code=404,
+                detail="Rezerwacja nie istnieje"
+            )
+
+        current_end_date = reservation["end_date"]
+        room_id = reservation["room_id"]
+
+         # nie można ustawić daty z przeszłości
+        if data.end_date < datetime.today().date():
+            raise HTTPException(
+                status_code=422,
+                detail="Nie można przedłużyć pobytu na datę z przeszłości"
+            )
+
+        #  data końca nie może być przed początkiem
+        if data.end_date <= reservation["start_date"]:
+            raise HTTPException(
+                status_code=422,
+                detail="Data końca musi być późniejsza od daty rozpoczęcia"
+            )
+
+
+        # 🔹 nowa data musi być późniejsza
+        if data.end_date <= current_end_date:
+            raise HTTPException(
+                status_code=422,
+                detail="Przedłużona data musi być późniejsza"
+            )
+
+        # 🔹 sprawdzenie konfliktu z inną rezerwacją
         cur.execute("""
             SELECT 1
-            FROM reservation r
-            JOIN room_reservation rr
+            FROM Reservation r
+            JOIN Room_Reservation rr
                 ON rr.reservation_id = r.reservation_id
             WHERE rr.room_id = %s
-              AND r.status != 'cancelled'
-              AND (
+                AND r.reservation_id != %s
+                AND r.status != 'cancelled'
+                AND (
                     %s < r.end_date
-                AND %s > r.start_date
-              )
+                    AND %s > r.start_date
+                )
         """, (
+            room_id,
             id,
             reservation["start_date"],
             data.end_date
         ))
 
-        existing_reservation = cur.fetchone()
+        conflict = cur.fetchone()
 
-        if existing_reservation:
+        if conflict:
             raise HTTPException(
                 status_code=409,
-                detail="Pokój jest już zarezerwowany w podanym terminie"
+                detail="Nie można przedłużyć pobytu — pokój jest już zarezerwowany w tym terminie"
             )
-        # sprawdź, czy data jest odpowiednia
-        if data.end_date <= end_date:
-            raise HTTPException(status_code=422, detail="Przedłużona data nie może być wcześniejsza lub identyczna do poprzedniej")
 
-        # 🔹 zaktualizuj dane rezerwacji
+        # 🔹 aktualizacja
         cur.execute("""
-            UPDATE Reservation as r
+            UPDATE Reservation
             SET end_date = %s
-            WHERE r.reservation_id = %s
+            WHERE reservation_id = %s
         """, (
             data.end_date,
-            reservation["reservation_id"]
+            id
         ))
 
         conn.commit()
 
+        return {
+            "message": "Pobyt został przedłużony"
+        }
+
+    except HTTPException:
+        conn.rollback()
+        raise
+
     except Exception as e:
         conn.rollback()
         print("DB ERROR:", e)
-        raise HTTPException(status_code=500, detail=str(e))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
     finally:
         cur.close()
 
+
+
 @router.put("/{id}/shorten")
 def shorten_reservation(id: int, data: schemas.ReservationUpdate, conn=Depends(get_db)):
+
     cur = conn.cursor(cursor_factory=RealDictCursor)
+
     try:
-        # 🔹 znajdź rezerwacje
+
+        # pobierz rezerwację
         cur.execute("""
-            SELECT r.reservation_id, end_date
-            FROM Reservation r
-            WHERE r.reservation_id = %s
+            SELECT
+                reservation_id,
+                start_date,
+                end_date
+            FROM Reservation
+            WHERE reservation_id = %s
         """, (id,))
 
         reservation = cur.fetchone()
-        end_date = reservation["end_date"]
 
         if not reservation:
-            raise HTTPException(status_code=404, detail="Rezerwacja nie istnieje")
+            raise HTTPException(
+                status_code=404,
+                detail="Rezerwacja nie istnieje"
+            )
 
-        # sprawdź, czy data jest odpowiednia
-        if data.end_date >= end_date:
-            raise HTTPException(status_code=422, detail="Skrócona data nie może być późniejsza lub identyczna do poprzedniej")
+        current_end_date = reservation["end_date"]
+        start_date = reservation["start_date"]
 
-        # 🔹 zaktualizuj dane rezerwacji
+        # ❌ nowa data musi być wcześniejsza
+        if data.end_date >= current_end_date:
+            raise HTTPException(
+                status_code=422,
+                detail="Nowa data musi być wcześniejsza niż obecna data zakończenia"
+            )
+
+        # ❌ nie może być przed początkiem
+        if data.end_date <= start_date:
+            raise HTTPException(
+                status_code=422,
+                detail="Data zakończenia musi być późniejsza od daty rozpoczęcia"
+            )
+
+        # ❌ nie można ustawić daty z przeszłości
+        if data.end_date < datetime.today().date():
+            raise HTTPException(
+                status_code=422,
+                detail="Nie można skrócić pobytu do daty z przeszłości"
+            )
+
+        # aktualizacja
         cur.execute("""
-            UPDATE Reservation as r
+            UPDATE Reservation
             SET end_date = %s
-            WHERE r.reservation_id = %s
+            WHERE reservation_id = %s
         """, (
             data.end_date,
-            reservation["reservation_id"]
+            id
         ))
 
         conn.commit()
 
-    except Exception as e:
+        return {
+            "message": "Skrócono rezerwację pomyślnie"
+        }
+
+    except HTTPException:
         conn.rollback()
+        raise
+
+    except Exception as e:
+
+        conn.rollback()
+
         print("DB ERROR:", e)
-        raise HTTPException(status_code=500, detail=str(e))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
     finally:
         cur.close()
@@ -412,46 +532,63 @@ def end_reservation(id: int, conn=Depends(get_db)):
 @router.put("/{id}/cancel")
 def cancel_reservation(id: int, conn=Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
+
     try:
-        # 🔹 znajdź rezerwacje
+        # pobierz rezerwację
         cur.execute("""
-            SELECT re.reservation_id, rr.room_id, re.status
-            FROM Reservation re
-            JOIN Room_reservation rr ON re.reservation_id = rr.reservation_id
-            WHERE re.reservation_id = %s
+            SELECT 
+                reservation_id,
+                start_date
+            FROM Reservation
+            WHERE reservation_id = %s
         """, (id,))
+
         reservation = cur.fetchone()
 
         if not reservation:
-            raise HTTPException(status_code=404, detail="Rezerwacja nie istnieje")
-        
-        if reservation["status"] not in ("created", "confirmed"):
-            raise HTTPException(status_code=422, detail="Zakaz anulowania rezerwacji, która już została rozpoczęta")
+            raise HTTPException(
+                status_code=404,
+                detail="Rezerwacja nie istnieje"
+            )
 
-        # 🔹 usuń rezerwację
-        cur.execute("""
-            DELETE FROM Reservation as r
-            WHERE r.reservation_id = %s
-        """, (
-            reservation["reservation_id"],
-        ))
+        # ❌ blokada anulowania starych rezerwacji
+        if reservation["start_date"] < datetime.today().date():
+            raise HTTPException(
+                status_code=422,
+                detail="Nie można anulować rezerwacji z przeszłości"
+            )
 
-        # 🔹 usuń rezerwację pokoju
+        # usuń powiązanie pokoju
         cur.execute("""
-            DELETE FROM Room_reservation as rr
-            WHERE rr.reservation_id = %s
-                    AND rr.room_id = %s
-        """, (
-            reservation["reservation_id"],
-            reservation["room_id"]
-        ))
+            DELETE FROM Room_Reservation
+            WHERE reservation_id = %s
+        """, (id,))
+
+        # usuń rezerwację
+        cur.execute("""
+            DELETE FROM Reservation
+            WHERE reservation_id = %s
+        """, (id,))
 
         conn.commit()
 
+        return {
+            "message": "Anulowano rezerwację"
+        }
+
+    except HTTPException:
+        conn.rollback()
+        raise
+
     except Exception as e:
         conn.rollback()
+
         print("DB ERROR:", e)
-        raise HTTPException(status_code=500, detail=str(e))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
     finally:
         cur.close()

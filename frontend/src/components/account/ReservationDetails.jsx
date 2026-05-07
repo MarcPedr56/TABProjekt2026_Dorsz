@@ -13,6 +13,8 @@ const ReservationDetails = () => {
 
     const [reservation, setReservation] = useState(initialReservation);
     const [services, setServices] = useState([]);
+    const [extendDate, setExtendDate] = useState("");
+    const [shortenDate, setShortenDate] = useState("");
 
     useEffect(() => {
         // Jeśli ktoś wszedł z palca w URL i nie ma state, powiedz mu, żeby spadał
@@ -29,46 +31,105 @@ const ReservationDetails = () => {
             .catch(err => console.error(err));
     }, [id, reservation, navigate]);
 
-    const handleCancel = async () => {
-        try {
-            await fetch(`${API}/reservations/${id}/cancel`, { method: "PUT" });
-            alert("Anulowano rezerwację.");
-            navigate("/account/reservations");
-        } catch (err) {
-            console.error(err);
-        }
-    };
 
     const handleExtend = async () => {
-        const newDate = prompt("Podaj nową datę końca (YYYY-MM-DD)");
-        if (!newDate) return;
+
+        if (!extendDate) {
+            alert("Wybierz nową datę");
+            return;
+        }
+
         try {
-            await fetch(`${API}/reservations/${id}/extend`, {
+
+            const res = await fetch(`${API}/reservations/${id}/extend`, {
                 method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ end_date: newDate })
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    end_date: extendDate
+                })
             });
-            alert("Przedłużono (odśwież stronę).");
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                alert(data.detail || "Nie można przedłużyć pobytu");
+                return;
+            }
+
+            alert(data.message || "Przedłużono pobyt");
+
+            setReservation({
+                ...reservation,
+                end_date: extendDate
+            });
+
+            setExtendDate("");
+
         } catch (err) {
+
             console.error(err);
+
+            alert("Błąd połączenia");
         }
     };
 
     const handleShorten = async () => {
-        const newDate = prompt("Podaj nową krótszą datę końca (YYYY-MM-DD)");
-        if (!newDate) return;
+
+        if (!shortenDate) {
+            alert("Wybierz nową datę");
+            return;
+        }
+
+        // 🔹 potwierdzenie
+        const confirmed = window.confirm(
+            "Czy na pewno chcesz skrócić rezerwację?"
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
         try {
-            await fetch(`${API}/reservations/${id}/shorten`, {
+
+            const res = await fetch(`${API}/reservations/${id}/shorten`, {
                 method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ end_date: newDate })
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    end_date: shortenDate
+                })
             });
-            alert("Skrócono (odśwież stronę).");
+
+            const data = await res.json();
+
+            // ❌ błąd
+            if (!res.ok) {
+
+                alert(data.detail || "Nie można skrócić pobytu");
+
+                return;
+            }
+
+            // ✅ sukces
+            alert("Skrócono rezerwację pomyślnie");
+
+            setReservation({
+                ...reservation,
+                end_date: shortenDate
+            });
+
+            setShortenDate("");
+
         } catch (err) {
+
             console.error(err);
+
+            alert("Błąd połączenia");
         }
     };
-
     const downloadConfirmation = async () => {
         try {
             const response = await fetch(`${API}/reservations/${id}/confirmation`);
@@ -88,36 +149,150 @@ const ReservationDetails = () => {
             alert("Wystąpił problem z pobieraniem potwierdzenia.");
         }
     };
+    const cancelReservation = async (id) => {
 
-    const cancelService = async (serviceId) => {
+        // 🔹 okienko potwierdzenia
+        const confirmed = window.confirm(
+            "Czy na pewno chcesz anulować rezerwację?"
+        );
+
+        // jeśli kliknięto NIE
+        if (!confirmed) {
+            return;
+        }
+
         try {
-            await fetch(`${API}/services/${serviceId}/cancel`, { method: "PUT" });
-            alert("Usługa anulowana.");
-            // Hack z przeładowaniem, bo nie trzymamy tu pełnego stanu
-            window.location.reload(); 
+
+            const res = await fetch(`${API}/reservations/${id}/cancel`, {
+                method: "PUT"
+            });
+
+            const data = await res.json();
+
+            // ❌ błąd
+            if (!res.ok) {
+
+                alert(data.detail || "Nie można anulować rezerwacji");
+
+                return;
+            }
+
+            // ✅ sukces
+            alert(data.message || "Anulowano rezerwację");
+
+            fetchReservations();
+
+            if (role === "guest") {
+                fetchMyReservations();
+            }
+
+            goBack();
+
         } catch (err) {
+
             console.error(err);
+
+            alert("Błąd połączenia");
         }
     };
 
     if (!reservation) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const reservationEndDate = new Date(reservation.end_date);
+
+    const isPastReservation = reservationEndDate < today;
 
     return (
         <div className="section">
             <h2>Szczegóły rezerwacji #{reservation.reservation_id}</h2>
 
-            <p><strong>Pokój (ID):</strong> {reservation.room_id || "Brak"}</p>
+            <p><strong>Pokój:</strong> {reservation.room_number || "Brak"}</p>
             <p><strong>Data od:</strong> {reservation.start_date}</p>
             <p><strong>Data do:</strong> {reservation.end_date}</p>
             <p><strong>Status:</strong> {reservation.status}</p>
 
-            <div style={{ marginTop: "20px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                <button className="button" onClick={handleCancel}>Anuluj</button>
-                <button className="button" onClick={handleExtend}>Przedłuż</button>
-                <button className="button" onClick={handleShorten}>Skróć</button>
-                <button className="button" style={{ width: "auto", padding: "10px 20px" }} onClick={downloadConfirmation}>
+            <div
+                style={{
+                    marginTop: "20px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "15px",
+                    alignItems: "flex-start"
+                }}
+            >
+
+                {!isPastReservation && (
+                    <>
+
+                        {/* ANULUJ */}
+                        <button
+                            className="button"
+                            onClick={() => cancelReservation(id)}
+                        >
+                            Anuluj
+                        </button>
+
+                        {/* PRZEDŁUŻ */}
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "10px"
+                            }}
+                        >
+                            <button
+                                className="button"
+                                onClick={handleExtend}
+                            >
+                                Przedłuż
+                            </button>
+
+                            <input
+                                type="date"
+                                value={extendDate}
+                                onChange={(e) => setExtendDate(e.target.value)}
+                            />
+                        </div>
+
+                        {/* SKRÓĆ */}
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "10px"
+                            }}
+                        >
+                            <button
+                                className="button"
+                                onClick={handleShorten}
+                            >
+                                Skróć
+                            </button>
+
+                            <input
+                                type="date"
+                                value={shortenDate}
+                                onChange={(e) => setShortenDate(e.target.value)}
+                            />
+                        </div>
+
+                    </>
+                )}
+
+                {/* PDF */}
+                <button
+                    className="button"
+                    style={{
+                        width: "auto",
+                        padding: "10px 20px"
+                    }}
+                    onClick={downloadConfirmation}
+                >
                     Pobierz potwierdzenie (PDF)
                 </button>
+
             </div>
 
             <h3 style={{ marginTop: "30px" }}>Zamówione usługi</h3>

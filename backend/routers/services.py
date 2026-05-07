@@ -139,7 +139,11 @@ def cancel_booking(id: int, conn=Depends(get_db)):
         
         if (datetime.today().date() >= service["usage_date"].date()):
             raise HTTPException(status_code=404, detail="Nie można anulować rezerwacji serwisu w dzień jej wykonania lub po jej zakończeniu")
-        
+        if service["date"] < datetime.today().date():
+            raise HTTPException(
+                status_code=422,
+                detail="Nie można anulować usługi z przeszłości"
+        )
         # 🔹 usuń rezerwację serwisu
         cur.execute("""
             DELETE FROM Service_usage as su

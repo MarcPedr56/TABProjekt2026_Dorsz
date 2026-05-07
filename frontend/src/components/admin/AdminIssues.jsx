@@ -6,6 +6,9 @@ const API = "http://127.0.0.1:8000";
 const AdminIssues = () => {
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [employees, setEmployees] = useState([]);
+    const [selectedEmployees, setSelectedEmployees] = useState({});
+    const [selectedStatuses, setSelectedStatuses] = useState({});
     const navigate = useNavigate();
 
     const [newTask, setNewTask] = useState({
@@ -33,6 +36,14 @@ const AdminIssues = () => {
 
     useEffect(() => {
         fetchTasks();
+
+        fetch(`${API}/employees`)
+            .then(res => res.json())
+            .then(data => {
+                setEmployees(Array.isArray(data) ? data : []);
+            })
+            .catch(err => console.error(err));
+
     }, []);
 
     const handleAddTask = async () => {
@@ -69,16 +80,69 @@ const AdminIssues = () => {
         }
     };
 
-    const handleUpdateTaskStatus = async (taskId, newStatus) => {
+    const handleUpdateTaskStatus = async (taskId) => {
+
         try {
-            await fetch(`${API}/tasks/${taskId}/status`, {
+
+            const res = await fetch(`${API}/tasks/${taskId}/status`, {
                 method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ status: newStatus })
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    status: selectedStatuses[taskId]
+                })
             });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                alert(data.detail || "Nie udało się zmienić statusu");
+                return;
+            }
+
+            alert("Status został pomyślnie zmieniony");
+
             fetchTasks();
+
         } catch (err) {
+
             console.error(err);
+
+            alert("Błąd połączenia");
+        }
+    };
+
+    const handleAssignEmployee = async (taskId) => {
+
+        try {
+
+            const res = await fetch(`${API}/tasks/${taskId}/assign`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    employee_id: Number(selectedEmployees[taskId])
+                })
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                alert(data.detail || "Nie udało się przypisać pracownika");
+                return;
+            }
+
+            alert("Pracownik został przypisany pomyślnie");
+
+            fetchTasks();
+
+        } catch (err) {
+
+            console.error(err);
+
+            alert("Błąd połączenia");
         }
     };
 
@@ -111,7 +175,7 @@ const AdminIssues = () => {
                 <thead>
                     <tr style={{ textAlign: "left" }}>
                         <th>ID</th>
-                        <th>Pokój (ID)</th>
+                        <th>Numer pokoju</th>
                         <th>Opis</th>
                         <th>Status</th>
                         <th>Pracownik</th>
@@ -121,26 +185,109 @@ const AdminIssues = () => {
                     {tasks.length > 0 ? (
                         tasks.map((t) => (
                             <tr key={t.task_id}>
+
                                 <td>{t.task_id}</td>
-                                <td>{t.room_id}</td>
+
+                                <td>{t.room_number}</td>
+
                                 <td>{t.description}</td>
+
+                                {/* STATUS */}
                                 <td>
-                                    <select
-                                        value={t.status || "todo"}
-                                        onChange={(e) => handleUpdateTaskStatus(t.task_id, e.target.value)}
-                                        style={{ padding: "5px" }}
-                                    >
-                                        <option value="todo">Do zrobienia</option>
-                                        <option value="in_progress">W trakcie</option>
-                                        <option value="done">Zakończone</option>
-                                    </select>
+
+                                    <div style={{
+                                        display: "flex",
+                                        gap: "10px",
+                                        alignItems: "center"
+                                    }}>
+
+                                        <select
+                                            value={selectedStatuses[t.task_id] || t.status || "todo"}
+                                            onChange={(e) =>
+                                                setSelectedStatuses({
+                                                    ...selectedStatuses,
+                                                    [t.task_id]: e.target.value
+                                                })
+                                            }
+                                            style={{ padding: "5px" }}
+                                        >
+                                            <option value="todo">Do zrobienia</option>
+                                            <option value="in_progress">W trakcie</option>
+                                            <option value="done">Zakończone</option>
+                                        </select>
+
+                                        <button
+                                            className="button"
+                                            style={{
+                                                width: "auto",
+                                                padding: "5px 10px"
+                                            }}
+                                            onClick={() => handleUpdateTaskStatus(t.task_id)}
+                                        >
+                                            Zapisz
+                                        </button>
+
+                                    </div>
+
                                 </td>
-                                <td>-</td> 
+
+                                {/* PRACOWNIK */}
+                                <td>
+
+                                    <div style={{
+                                        display: "flex",
+                                        gap: "10px",
+                                        alignItems: "center"
+                                    }}>
+
+                                        <select
+                                            value={selectedEmployees[t.task_id] || ""}
+                                            onChange={(e) =>
+                                                setSelectedEmployees({
+                                                    ...selectedEmployees,
+                                                    [t.task_id]: e.target.value
+                                                })
+                                            }
+                                            style={{ padding: "5px" }}
+                                        >
+
+                                            <option value="">
+                                                Wybierz pracownika
+                                            </option>
+
+                                            {employees.map((emp) => (
+                                                <option
+                                                    key={emp.employee_id}
+                                                    value={emp.employee_id}
+                                                >
+                                                    {emp.first_name} {emp.last_name}
+                                                </option>
+                                            ))}
+
+                                        </select>
+
+                                        <button
+                                            className="button"
+                                            style={{
+                                                width: "auto",
+                                                padding: "5px 10px"
+                                            }}
+                                            onClick={() => handleAssignEmployee(t.task_id)}
+                                        >
+                                            Przypisz
+                                        </button>
+
+                                    </div>
+
+                                </td>
+
                             </tr>
                         ))
                     ) : (
                         <tr>
-                            <td colSpan="5" style={{ textAlign: "center" }}>Brak aktywnych zadań.</td>
+                            <td colSpan="5" style={{ textAlign: "center" }}>
+                                Brak aktywnych zadań.
+                            </td>
                         </tr>
                     )}
                 </tbody>
