@@ -3,6 +3,7 @@ from fastapi.responses import FileResponse
 from psycopg2.extras import RealDictCursor
 from fpdf import FPDF
 from database import get_db
+from datetime import datetime
 import os
 import schemas
 
@@ -133,85 +134,127 @@ def update_payment(id: int, data: schemas.PaymentUpdate, conn = Depends(get_db))
         cur.close()
 
 @router.get("/{id}/pdf")
-def generate_invoice_pdf(id: int, conn = Depends(get_db)):
+def generate_invoice_pdf(id: int, conn=Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cur.execute("""
             SELECT 
-                p.payment_id, p.amount, p.invoice_number, p.payment_date,
+                p.payment_id, p.amount, p.payment_date, p.invoice_number,
+                r.reservation_id, r.start_date, r.end_date,
                 g.first_name, g.last_name, g.pesel,
-                r.start_date, r.end_date,
-                rm.room_number, rm.room_type
+                rm.room_number, rm.room_type,
+                rr.actual_price_per_night
             FROM Payment p
             JOIN Reservation r ON p.reservation_id = r.reservation_id
             JOIN Guest g ON r.main_guest_id = g.guest_id
-            JOIN Room_reservation rr ON r.reservation_id = rr.reservation_id
+            JOIN Room_Reservation rr ON r.reservation_id = rr.reservation_id
             JOIN Room rm ON rr.room_id = rm.room_id
             WHERE p.payment_id = %s
         """, (id,))
         data = cur.fetchone()
-        
+
         if not data:
             raise HTTPException(status_code=404, detail="Płatność nie istnieje")
 
         cur.execute("""
-            SELECT s.name, su.quantity, su.actual_price
-            FROM Service_Usage su
+            SELECT s.name, su.quantity, s.price, su.actual_price
+            FROM service_usage su
             JOIN Service s ON su.service_id = s.service_id
-            WHERE su.reservation_id = (SELECT reservation_id FROM Payment WHERE payment_id = %s)
-        """, (id,))
+            WHERE su.reservation_id = %s
+        """, (data["reservation_id"],))
         services = cur.fetchall()
+
+        days = (data["end_date"] - data["start_date"]).days
+        if days < 1: days = 1
+        room_price_total = days * data["actual_price_per_night"]
 
         pdf = FPDF()
         pdf.add_page()
+        pdf.set_font("helvetica", "B", 14)
         
-        pdf.set_font("helvetica", "B", 16)
-        
-        pdf.cell(0, 10, strip_accents(f"FAKTURA NR: {data['invoice_number']}"), ln=1, align="C")
-        pdf.set_font("helvetica", "", 10)
-        pdf.cell(0, 10, strip_accents(f"Data wystawienia: {data['payment_date']}"), ln=1, align="R")
-        pdf.ln(10) 
-
-        pdf.set_font("helvetica", "B", 12)
-        pdf.cell(95, 10, "Sprzedawca:", ln=0, align="L")
-        pdf.cell(95, 10, "Nabywca:", ln=1, align="R")
+        inv_number = data['invoice_number'] if data['invoice_number'] else f"FV/{data['payment_id']}/{datetime.now().year}"
+        pdf.cell(0, 10, f"FAKTURA NR: {inv_number}", ln=1, align="C")
         
         pdf.set_font("helvetica", "", 10)
-        pdf.cell(95, 6, "Hotel Bursztyn", ln=0, align="L")
-        pdf.cell(95, 6, strip_accents(f"{data['first_name']} {data['last_name']}"), ln=1, align="R")
-        pdf.cell(95, 6, "ul. Wakacyjna 12, 80-000 Gdansk", ln=0, align="L")
-        pdf.cell(95, 6, f"PESEL: {data['pesel']}", ln=1, align="R")
-        pdf.ln(15)
-
+        formatted_date = data['payment_date'].strftime('%Y-%m-%d %H:%M')
+        pdf.cell(0, 10, f"Data wystawienia: {formatted_date}", ln=1)
+        
+        pdf.ln(5)
+        pdf.cell(90, 5, "Sprzedawca:", 0, 0)
+        pdf.cell(90, 5, "Nabywca:", 0, 1)
         pdf.set_font("helvetica", "B", 10)
-        pdf.cell(80, 10, "Usluga", border=1, ln=0)
-        pdf.cell(30, 10, "Ilosc", border=1, ln=0, align="C")
-        pdf.cell(40, 10, "Cena Jedn.", border=1, ln=0, align="R")
-        pdf.cell(40, 10, "Razem", border=1, ln=1, align="R")
-
+        pdf.cell(90, 5, "Hotel Bursztyn", 0, 0)
+        
+        guest_name = strip_accents(f"{data['first_name']} {data['last_name']}")
+        pdf.cell(90, 5, guest_name, 0, 1)
+        
         pdf.set_font("helvetica", "", 10)
-        pdf.cell(80, 10, strip_accents(f"Pokoj {data['room_number']} ({data['room_type']})"), border=1, ln=0)
-        pdf.cell(30, 10, "1", border=1, ln=0, align="C")
-        pdf.cell(40, 10, "-", border=1, ln=0, align="R") 
-        pdf.cell(40, 10, f"{data['amount']} PLN", border=1, ln=1, align="R")
-
-        for s in services:
-            pdf.cell(80, 10, strip_accents(s['name']), border=1, ln=0)
-            pdf.cell(30, 10, str(s['quantity']), border=1, ln=0, align="C")
-            pdf.cell(40, 10, f"{s['actual_price'] / s['quantity']:.2f} PLN", border=1, ln=0, align="R")
-            pdf.cell(40, 10, f"{s['actual_price']} PLN", border=1, ln=1, align="R")
-
-        total_amount = float(data['amount']) + sum(float(s['actual_price']) for s in services)
+        pdf.cell(90, 5, "ul. Wakacyjna 12, 80-000 Gdansk", 0, 0)
+        pesel_text = f"PESEL: {data['pesel']}" if data['pesel'] else ""
+        pdf.cell(90, 5, pesel_text, 0, 1)
 
         pdf.ln(10)
-        pdf.set_font("helvetica", "B", 14)
-        pdf.cell(0, 10, f"RAZEM DO ZAPLATY: {total_amount:.2f} PLN", ln=1, align="R")
+        
+        # Nagłówki tabeli
+        pdf.set_font("helvetica", "B", 10)
+        pdf.cell(70, 10, "Usluga", 1)
+        pdf.cell(20, 10, "Ilosc", 1, 0, 'C')
+        pdf.cell(40, 10, "Cena Jedn.", 1, 0, 'R')
+        pdf.cell(40, 10, "Razem", 1, 1, 'R')
+        
+        pdf.set_font("helvetica", "", 10)
+        
+        room_desc = strip_accents(f"Pokoj {data['room_number']} ({data['room_type']})")
+        pdf.cell(70, 10, room_desc, 1)
+        pdf.cell(20, 10, str(days), 1, 0, 'C') # Wyświetlamy ilość nocy
+        pdf.cell(40, 10, f"{data['actual_price_per_night']:.2f} PLN", 1, 0, 'R')
+        pdf.cell(40, 10, f"{room_price_total:.2f} PLN", 1, 1, 'R')
+        
+        for s in services:
+            s_name = strip_accents(s['name'])
+            pdf.cell(70, 10, s_name, 1)
+            pdf.cell(20, 10, str(s['quantity']), 1, 0, 'C')
+            pdf.cell(40, 10, f"{s['price']:.2f} PLN", 1, 0, 'R')
+            pdf.cell(40, 10, f"{s['actual_price']:.2f} PLN", 1, 1, 'R')
+
+        pdf.ln(5)
+        pdf.set_font("helvetica", "B", 12)
+        
+        pdf.cell(0, 10, f"RAZEM DO ZAPLATY: {data['amount']:.2f} PLN", ln=1, align="R")
 
         pdf_bytes = pdf.output(dest='S').encode('latin-1', errors='replace')
         
-        headers = {
-            "Content-Disposition": f"attachment; filename=faktura_{data['invoice_number']}.pdf"
-        }
-        return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+        return Response(content=pdf_bytes, media_type="application/pdf", headers={
+            "Content-Disposition": f"attachment; filename=faktura_{data['payment_id']}.pdf"
+        })
+    except Exception as e:
+        print("PDF ERROR:", e)
+        raise HTTPException(status_code=500, detail="Błąd generowania faktury")
+    finally:
+        cur.close()
+
+@router.get("/user/{email}")
+def get_user_payments(email: str, conn = Depends(get_db)):
+    """Pobiera płatności zalogowanego usera i przy okazji łata brakujące numery faktur"""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        # Najpierw wygeneruj numery faktur dla tych, co ich nie mają (np. FV/ID/ROK)
+        cur.execute("""
+            UPDATE Payment 
+            SET invoice_number = 'FV/' || payment_id || '/' || TO_CHAR(payment_date, 'YYYY')
+            WHERE invoice_number IS NULL;
+        """)
+        
+        # Pobierz płatności
+        cur.execute("""
+            SELECT p.*
+            FROM Payment p
+            JOIN Reservation r ON p.reservation_id = r.reservation_id
+            JOIN Guest g ON r.main_guest_id = g.guest_id
+            JOIN Account a ON g.guest_id = a.guest_id
+            WHERE a.email = %s
+            ORDER BY p.payment_date DESC;
+        """, (email,))
+        return cur.fetchall()
     finally:
         cur.close()

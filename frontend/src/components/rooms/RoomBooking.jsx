@@ -8,12 +8,14 @@ const RoomBooking = () => {
     const { id } = useParams();
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
-    const { user, role } = useAuthStore();
+    
+    // Poprawne wyciągnięcie użytkownika. Zależnie jak napisałeś store, role może być w user.role
+    const user = useAuthStore(state => state.user);
+    const role = useAuthStore(state => state.role) || (user?.role); 
 
     const [startDate, setStartDate] = useState(searchParams.get("start") || "");
     const [endDate, setEndDate] = useState(searchParams.get("end") || "");
 
-    // NOWE POLA DLA ADMINA / RECEPCJI
     const [guestEmail, setGuestEmail] = useState(user?.email || "");
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
@@ -36,7 +38,6 @@ const RoomBooking = () => {
     }, [id]);
 
     const handleBook = async () => {
-        // 1. Walidacja dat (zakaz przeszłości)
         const today = new Date().toISOString().split('T')[0];
         if (startDate < today) {
             alert("Błąd: Nie można rezerwować dat z przeszłości!");
@@ -47,39 +48,26 @@ const RoomBooking = () => {
             return;
         }
 
-        // 2. Walidacja dla Admina/Recepcjonisty (rezerwacja dla kogoś)
         if (isAdmin) {
-            // --- Walidacja Email ---
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             if (!emailRegex.test(guestEmail)) {
-                alert("Błąd: Wpisz poprawny adres e-mail (np. nazwa@domena.pl)!");
+                alert("Błąd: Wpisz poprawny adres e-mail!");
                 return;
             }
-
-            // --- Walidacja Imienia i Nazwiska ---
-            if (firstName.trim().length < 2) {
-                alert("Błąd: Imię musi mieć co najmniej 2 znaki!");
+            if (firstName.trim().length < 2 || lastName.trim().length < 2) {
+                alert("Błąd: Imię i nazwisko muszą mieć co najmniej 2 znaki!");
                 return;
             }
-            if (lastName.trim().length < 2) {
-                alert("Błąd: Nazwisko musi mieć co najmniej 2 znaki!");
-                return;
-            }
-
-            // --- Walidacja PESEL (opcjonalna, ale jeśli wpisany to musi być poprawny) ---
             if (pesel && !/^\d{11}$/.test(pesel)) {
                 alert("Błąd: PESEL musi składać się z dokładnie 11 cyfr!");
                 return;
             }
-
-            // --- Walidacja Telefonu (minimum 9 cyfr) ---
             if (phone && !/^\d{9,}$/.test(phone.replace(/\s/g, ""))) {
                 alert("Błąd: Numer telefonu powinien mieć co najmniej 9 cyfr!");
                 return;
             }
         }
 
-        // Jeśli wszystko ok, wysyłamy do bazy
         try {
             const res = await fetch(`${API}/reservations`, {
                 method: "POST",
@@ -88,7 +76,7 @@ const RoomBooking = () => {
                     room_id: parseInt(id),
                     start_date: startDate,
                     end_date: endDate,
-                    role: role,
+                    role: role || 'guest',
                     email: isAdmin ? guestEmail : user?.email,
                     first_name: firstName,
                     last_name: lastName,
@@ -138,10 +126,9 @@ const RoomBooking = () => {
                     <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="input" />
                 </div>
 
-                {/* DODATKOWE POLA DLA ADMINA (Zadanie: opcjonalne pole na maila i dane) */}
                 {isAdmin && (
                     <div style={{ borderTop: '1px solid #ddd', paddingTop: '15px', marginTop: '10px' }}>
-                        <h4 style={{ marginBottom: '10px' }}>Dane gościa:</h4>
+                        <h4 style={{ marginBottom: '10px' }}>Dane gościa (Wymagane dla recepcji):</h4>
                         <input type="email" placeholder="Email gościa" value={guestEmail} onChange={e => setGuestEmail(e.target.value)} className="input" style={{ marginBottom: '10px' }} />
                         <div style={{ display: 'flex', gap: '10px' }}>
                             <input type="text" placeholder="Imię" value={firstName} onChange={e => setFirstName(e.target.value)} className="input" />

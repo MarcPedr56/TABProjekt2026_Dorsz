@@ -63,32 +63,17 @@ def get_reservation_services(reservationId: int, conn = Depends(get_db)):
 def book_service(data: dict, conn = Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        # 1. Pobierz dane rezerwacji wraz z jej terminem
-        cur.execute("""
-            SELECT status, start_date, end_date
-            FROM Reservation
-            WHERE reservation_id = %s
-        """, (data["reservation_id"],))
+        # 1. Pobierz info o rezerwacji
+        cur.execute("SELECT status, start_date, end_date FROM Reservation WHERE reservation_id = %s", (data["reservation_id"],))
         res_info = cur.fetchone()
+        if not res_info: raise HTTPException(status_code=404, detail="Rezerwacja nie istnieje")
 
-        if not res_info:
-            raise HTTPException(status_code=404, detail="Rezerwacja nie istnieje")
-        
-        if res_info["status"] in ("finished", "cancelled", "anulowano"):
-            raise HTTPException(status_code=422, detail="Rezerwacja jest już zakończona lub anulowana")
-
-        # --- NOWA WALIDACJA: CZY GOŚĆ MA WTEDY POKÓJ? ---
+        # 2. Walidacja daty usługi (czy mieści się w pobycie)
         service_date = datetime.strptime(data["usage_date"], "%Y-%m-%d").date()
-        res_start = res_info["start_date"]
-        res_end = res_info["end_date"]
+        if not (res_info["start_date"] <= service_date <= res_info["end_date"]):
+            raise HTTPException(status_code=422, detail="Usługa poza terminem pobytu")
 
-        if not (res_start <= service_date <= res_end):
-            raise HTTPException(
-                status_code=422, 
-                detail=f"Gość nie ma wynajętego pokoju w dniu {service_date}. Pobyt trwa od {res_start} do {res_end}."
-            )
-
-        # 2. Zapis usługi
+        # 3. Zapis usługi i pobranie ceny
         full_date = f"{data['usage_date']} {data['usage_time']}"
         dt_object = datetime.strptime(full_date, "%Y-%m-%d %H:%M")
 
@@ -100,15 +85,20 @@ def book_service(data: dict, conn = Depends(get_db)):
         """, (int(data["reservation_id"]), int(data["quantity"]), dt_object, int(data["quantity"]), int(data["service_id"])))
 
         result = cur.fetchone()
+
+        # --- KLUCZOWA POPRAWKA: Aktualizacja tabeli Payment ---
+        if result:
+            cur.execute("""
+                UPDATE Payment 
+                SET amount = amount + %s 
+                WHERE reservation_id = %s
+            """, (result["actual_price"], int(data["reservation_id"])))
+
         conn.commit()
         return result
-
-    except HTTPException as e:
-        conn.rollback()
-        raise e
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail="Błąd bazy danych")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
 
@@ -128,9 +118,9 @@ def get_all_services(conn = Depends(get_db)):
 def cancel_booking(id: int, conn=Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        # 1. Znajdź rezerwację serwisu
+        # Znajdź rezerwację serwisu i jej wyliczoną kwotę
         cur.execute("""
-            SELECT su.usage_id, su.reservation_id, su.usage_date
+            SELECT su.usage_id, su.reservation_id, su.usage_date, su.actual_price
             FROM service_usage as su
             WHERE su.usage_id = %s
         """, (id,))
@@ -139,14 +129,11 @@ def cancel_booking(id: int, conn=Depends(get_db)):
         if not service:
             raise HTTPException(status_code=404, detail="Rezerwacja serwisu nie istnieje")
 
-        # 2. Sprawdź czy rezerwacja główna istnieje
         cur.execute("SELECT reservation_id FROM Reservation WHERE reservation_id = %s", (service["reservation_id"],))
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Rezerwacja główna nie istnieje")
         
-        # 3. WALIDACJA DATY (Poprawione nazwy kluczy!)
         today = date.today()
-        # usage_date może być typu datetime, musimy wyciągnąć samo date()
         u_date = service["usage_date"].date() if isinstance(service["usage_date"], datetime) else service["usage_date"]
 
         if today >= u_date:
@@ -155,10 +142,18 @@ def cancel_booking(id: int, conn=Depends(get_db)):
                 detail="Nie można anulować usługi w dniu jej wykonania lub z przeszłości"
             )
 
-        # 4. Usuń
+        # --- ZMNIEJSZENIE GŁÓWNEGO RACHUNKU ---
+        cur.execute("""
+            UPDATE Payment 
+            SET amount = amount - %s 
+            WHERE reservation_id = %s
+        """, (service["actual_price"], service["reservation_id"]))
+
+        # Usuń usługę
         cur.execute("DELETE FROM service_usage WHERE usage_id = %s", (id,))
+        
         conn.commit()
-        return {"message": "Usługa anulowana"}
+        return {"message": "Usługa anulowana i rachunek pomniejszony"}
 
     except HTTPException as e:
         conn.rollback()

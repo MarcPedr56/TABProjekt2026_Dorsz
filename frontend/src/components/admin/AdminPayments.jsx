@@ -24,48 +24,31 @@ const AdminPayments = () => {
     };
 
     const updatePayment = async (paymentId) => {
-
         try {
-
-            const payment = payments.find(
-                (p) => p.payment_id === paymentId
-            );
-
+            const payment = payments.find((p) => p.payment_id === paymentId);
             const res = await fetch(`${API}/payments/${paymentId}`, {
                 method: "PUT",
-                headers: {
-                    "Content-Type": "application/json"
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    method:
-                        selectedMethods[paymentId] || payment.method,
-
-                    status:
-                        selectedStatuses[paymentId] || payment.status
+                    method: selectedMethods[paymentId] || payment.method,
+                    status: selectedStatuses[paymentId] || payment.status
                 })
             });
 
             const data = await res.json();
-
             if (!res.ok) {
-
                 alert(data.detail || "Nie udało się zmienić płatności");
-
                 return;
             }
 
             alert("Płatność została pomyślnie zaktualizowana");
-
             fetchPayments();
-
         } catch (err) {
-
             console.error(err);
-
             alert("Błąd połączenia");
         }
     };
-    // Funkcja do pobierania faktury (wynieś to kiedyś do pliku utils.js!)
+
     const downloadInvoice = async (paymentId) => {
         try {
             const response = await fetch(`${API}/payments/${paymentId}/pdf`);
@@ -89,7 +72,6 @@ const AdminPayments = () => {
     return (
         <div className="section">
             <h2>Płatności</h2>
-
             <div style={{ marginTop: "20px", display: 'flex', gap: '10px' }}>
                 <input 
                     placeholder="Wpisz PESEL" 
@@ -121,84 +103,42 @@ const AdminPayments = () => {
                             <tr key={p.payment_id}>
                                 <td>{p.payment_id}</td>
                                 <td>{p.amount} PLN</td>
-                                <td>{p.payment_date}</td>
+                                <td>{new Date(p.payment_date).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' })}</td>
                                 <td>{p.reservation_id}</td>
-                                
                                 <td>
-
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            gap: "10px",
-                                            alignItems: "center"
-                                        }}
+                                    <select
+                                        value={selectedMethods[p.payment_id] || p.method}
+                                        onChange={(e) => setSelectedMethods({
+                                            ...selectedMethods,
+                                            [p.payment_id]: e.target.value
+                                        })}
                                     >
-
-                                        <select
-                                            value={
-                                                selectedMethods[p.payment_id] || p.method
-                                            }
-                                            onChange={(e) =>
-                                                setSelectedMethods({
-                                                    ...selectedMethods,
-                                                    [p.payment_id]: e.target.value
-                                                })
-                                            }
-                                        >
-                                            <option value="karta">Karta</option>
-                                            <option value="gotowka">Gotówka</option>
-                                            <option value="przelew">Przelew</option>
-                                        </select>
-
-                                    </div>
-
+                                        <option value="karta">Karta</option>
+                                        <option value="gotowka">Gotówka</option>
+                                        <option value="przelew">Przelew</option>
+                                    </select>
                                 </td>
-                                
                                 <td>
-
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            gap: "10px",
-                                            alignItems: "center"
-                                        }}
-                                    >
-
+                                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
                                         <select
-                                            value={
-                                                selectedStatuses[p.payment_id] || p.status
-                                            }
-                                            onChange={(e) =>
-                                                setSelectedStatuses({
-                                                    ...selectedStatuses,
-                                                    [p.payment_id]: e.target.value
-                                                })
-                                            }
+                                            value={selectedStatuses[p.payment_id] || p.status}
+                                            onChange={(e) => setSelectedStatuses({
+                                                ...selectedStatuses,
+                                                [p.payment_id]: e.target.value
+                                            })}
                                         >
-                                            <option value="niezaplacone">
-                                                Niezapłacone
-                                            </option>
-
-                                            <option value="zaplacone">
-                                                Zapłacone
-                                            </option>
+                                            <option value="niezaplacone">Niezapłacone</option>
+                                            <option value="zaplacone">Zapłacone</option>
                                         </select>
-
                                         <button
                                             className="button"
-                                            style={{
-                                                width: "auto",
-                                                padding: "5px 10px"
-                                            }}
+                                            style={{ width: "auto", padding: "5px 10px" }}
                                             onClick={() => updatePayment(p.payment_id)}
                                         >
                                             Zapisz
                                         </button>
-
                                     </div>
-
                                 </td>
-                                
                                 <td>
                                     <button 
                                         className="button" 
@@ -213,7 +153,6 @@ const AdminPayments = () => {
                     </tbody>
                 </table>
             )}
-
             {!loading && payments.length === 0 && searchPesel && (
                 <p style={{ marginTop: '20px' }}>Brak płatności dla podanego PESELu.</p>
             )}

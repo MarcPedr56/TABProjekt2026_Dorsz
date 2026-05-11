@@ -204,6 +204,33 @@ const ReservationDetails = () => {
 
     const isPastReservation = reservationEndDate < today;
 
+    const cancelService = async (usageId) => {
+        const confirmed = window.confirm("Czy na pewno chcesz anulować tę usługę?");
+        if (!confirmed) return;
+
+        try {
+            const res = await fetch(`${API}/services/${usageId}/cancel`, {
+                method: "PUT"
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                alert(data.detail || "Nie można anulować usługi");
+                return;
+            }
+
+            alert("Usługa anulowana.");
+            
+            // Aktualizacja stanu lokalnego, żeby zniknęła z tabeli bez odświeżania strony
+            setServices(prevServices => prevServices.filter(s => s.usage_id !== usageId));
+
+        } catch (err) {
+            console.error("Błąd podczas anulowania usługi:", err);
+            alert("Błąd połączenia");
+        }
+    };
+
     return (
         <div className="section">
             <h2>Szczegóły rezerwacji #{reservation.reservation_id}</h2>

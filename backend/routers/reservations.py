@@ -23,10 +23,15 @@ router = APIRouter(
 
 @router.get("/", response_model=list[schemas.ReservationResponse])
 def get_all_reservations(conn = Depends(get_db)):
-    """Pobiera wszystkie rezerwacje (Dla panelu Admina)"""
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cur.execute("SELECT * FROM Reservation ORDER BY start_date DESC;")
+        cur.execute("""
+            SELECT r.*, rm.room_number 
+            FROM Reservation r
+            LEFT JOIN Room_Reservation rr ON rr.reservation_id = r.reservation_id
+            LEFT JOIN Room rm ON rm.room_id = rr.room_id
+            ORDER BY r.start_date DESC;
+        """)
         return cur.fetchall()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -35,29 +40,29 @@ def get_all_reservations(conn = Depends(get_db)):
 
 @router.get("/guest/{guest_id}/{active}", response_model=list[schemas.ReservationResponse])
 def get_guest_reservations(guest_id: int, active: str, conn = Depends(get_db)):
-    """Pobiera rezerwacje po ID Gościa (Dla historii w panelu Admina)"""
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         if active == "true":
             cur.execute("""
-                SELECT * 
-                FROM Reservation 
-                WHERE main_guest_id = %s
-                    AND (end_date > cast(now() as date)
-                        OR (end_date = cast(now() as date)
+                SELECT r.*, rm.room_number 
+                FROM Reservation r
+                LEFT JOIN Room_Reservation rr ON rr.reservation_id = r.reservation_id
+                LEFT JOIN Room rm ON rm.room_id = rr.room_id
+                WHERE r.main_guest_id = %s
+                    AND (r.end_date > cast(now() as date)
+                        OR (r.end_date = cast(now() as date)
                         AND NOW() < cast(cast(now() as date) as timestamp) + INTERVAL '10 hours'))
-                ORDER BY start_date DESC;
-                """, 
-            (guest_id,))
+                ORDER BY r.start_date DESC;
+                """, (guest_id,))
         else:
             cur.execute("""
-                SELECT * 
-                FROM Reservation 
-                WHERE main_guest_id = %s
-                ORDER BY start_date DESC;
-                """, 
-            (guest_id,))
-
+                SELECT r.*, rm.room_number 
+                FROM Reservation r
+                LEFT JOIN Room_Reservation rr ON rr.reservation_id = r.reservation_id
+                LEFT JOIN Room rm ON rm.room_id = rr.room_id
+                WHERE r.main_guest_id = %s
+                ORDER BY r.start_date DESC;
+                """, (guest_id,))
         return cur.fetchall()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -66,62 +71,36 @@ def get_guest_reservations(guest_id: int, active: str, conn = Depends(get_db)):
 
 @router.get("/user/{email}/{active}", response_model=list[schemas.ReservationResponse])
 def get_user_reservations(email: str, active: str, conn=Depends(get_db)):
-    """Pobiera rezerwacje po emailu"""
-
     cur = conn.cursor(cursor_factory=RealDictCursor)
-
     try:
-
         if active == "true":
-
             cur.execute("""
-                SELECT 
-                    r.*,
-                    rm.room_number
+                SELECT r.*, rm.room_number
                 FROM Reservation r
-                JOIN Guest g 
-                    ON r.main_guest_id = g.guest_id
-                JOIN Account a 
-                    ON g.guest_id = a.guest_id
-                JOIN Room_Reservation rr
-                    ON rr.reservation_id = r.reservation_id
-                JOIN Room rm
-                    ON rm.room_id = rr.room_id
+                JOIN Guest g ON r.main_guest_id = g.guest_id
+                JOIN Account a ON g.guest_id = a.guest_id
+                JOIN Room_Reservation rr ON rr.reservation_id = r.reservation_id
+                JOIN Room rm ON rm.room_id = rr.room_id
                 WHERE a.email = %s
-                    AND (
-                        r.end_date > CAST(NOW() AS date)
-                        OR (
-                            r.end_date = CAST(NOW() AS date)
-                            AND NOW() < CAST(CAST(NOW() AS date) AS timestamp) + INTERVAL '10 hours'
-                        )
-                    )
+                    AND (r.end_date > CAST(NOW() AS date)
+                        OR (r.end_date = CAST(NOW() AS date)
+                            AND NOW() < CAST(CAST(NOW() AS date) AS timestamp) + INTERVAL '10 hours'))
                 ORDER BY r.start_date DESC;
             """, (email,))
-
         else:
-
             cur.execute("""
-                SELECT 
-                    r.*,
-                    rm.room_number
+                SELECT r.*, rm.room_number
                 FROM Reservation r
-                JOIN Guest g 
-                    ON r.main_guest_id = g.guest_id
-                JOIN Account a 
-                    ON g.guest_id = a.guest_id
-                JOIN Room_Reservation rr
-                    ON rr.reservation_id = r.reservation_id
-                JOIN Room rm
-                    ON rm.room_id = rr.room_id
+                JOIN Guest g ON r.main_guest_id = g.guest_id
+                JOIN Account a ON g.guest_id = a.guest_id
+                JOIN Room_Reservation rr ON rr.reservation_id = r.reservation_id
+                JOIN Room rm ON rm.room_id = rr.room_id
                 WHERE a.email = %s
                 ORDER BY r.start_date DESC;
             """, (email,))
-
         return cur.fetchall()
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
     finally:
         cur.close()
 
@@ -129,15 +108,13 @@ def get_user_reservations(email: str, active: str, conn=Depends(get_db)):
 def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        # 1. Walidacja dat (zakaz rezerwacji wstecz)
         today = datetime.today().date()
-        # Konwersja daty jeśli przychodzi jako string
         start_d = data.start_date.date() if hasattr(data.start_date, 'date') else datetime.strptime(str(data.start_date).split(' ')[0], '%Y-%m-%d').date()
+        end_d = data.end_date.date() if hasattr(data.end_date, 'date') else datetime.strptime(str(data.end_date).split(' ')[0], '%Y-%m-%d').date()
         
         if start_d < today:
             raise HTTPException(status_code=422, detail="Nie można rezerwować pokoju na datę z przeszłości.")
 
-        # 2. Szukanie gościa
         cur.execute("""
             SELECT g.guest_id FROM Guest g
             JOIN Account a ON g.guest_id = a.guest_id
@@ -148,23 +125,17 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
         if guest:
             guest_id = guest["guest_id"]
         else:
-            # 3. Jeśli Admin rezerwuje dla NOWEGO gościa - twórz go!
             if data.role in ("admin", "receptionist"):
                 if not data.first_name or not data.last_name:
                     raise HTTPException(status_code=422, detail="Dla nowego gościa wymagane jest imię i nazwisko.")
-                
                 cur.execute("""
                     INSERT INTO Guest (first_name, last_name, pesel, phone_number)
                     VALUES (%s, %s, %s, %s) RETURNING guest_id
                 """, (data.first_name, data.last_name, data.pesel, data.phone_number))
                 guest_id = cur.fetchone()["guest_id"]
-                
-                # Opcjonalnie: można tu też stworzyć konto (Account), 
-                # ale dla rezerwacji "z ulicy" sam rekord Guest wystarczy.
             else:
                 raise HTTPException(status_code=404, detail="Użytkownik o tym mailu nie ma konta gościa.")
 
-        # 4. Sprawdzenie ceny i dostępności pokoju (reszta bez zmian)
         cur.execute("SELECT price_per_night FROM Room WHERE room_id = %s", (data.room_id,))
         room = cur.fetchone()
         if not room: raise HTTPException(status_code=404, detail="Pokój nie istnieje")
@@ -178,7 +149,6 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
         if cur.fetchone():
             raise HTTPException(status_code=409, detail="Pokój zajęty w tym terminie")
 
-        # 5. Zapis rezerwacji
         cur.execute("""
             INSERT INTO Reservation (main_guest_id, start_date, end_date, status, type)
             VALUES (%s, %s, %s, 'created', 'individual') RETURNING reservation_id
@@ -188,8 +158,18 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
         cur.execute("INSERT INTO Room_Reservation (room_id, reservation_id, actual_price_per_night) VALUES (%s, %s, %s)",
                     (data.room_id, res_id, room["price_per_night"]))
 
+        # OBLICZENIE I DODANIE PŁATNOŚCI - TO, CZEGO ZAPOMNIAŁEŚ
+        days = (end_d - start_d).days
+        if days < 1: days = 1
+        total_price = days * room["price_per_night"]
+
+        cur.execute("""
+            INSERT INTO Payment (reservation_id, amount, method, status)
+            VALUES (%s, %s, %s, %s)
+        """, (res_id, total_price, 'karta', 'niezaplacone'))
+
         conn.commit()
-        return {"reservation_id": res_id, "message": "Rezerwacja stworzona pomyślnie"}
+        return {"reservation_id": res_id, "message": "Rezerwacja i płatność stworzone pomyślnie"}
 
     except Exception as e:
         conn.rollback()
