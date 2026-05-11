@@ -42,10 +42,11 @@ const AdminReservations = () => {
             <table className="table" style={{ width: "100%", borderCollapse: "collapse", marginTop: "20px" }}>
                 <thead>
                     <tr style={{ textAlign: "left" }}>
-                        <th>ID</th>
+                        <th>Numer rezerwacji</th>
                         <th>Gość</th>
                         <th>Data od</th>
                         <th>Data do</th>
+                        <th>Pokój</th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -62,6 +63,7 @@ const AdminReservations = () => {
                                 <td style={{ padding: "10px" }}>{getGuestName(r.main_guest_id)}</td>
                                 <td style={{ padding: "10px" }}>{r.start_date ? r.start_date.split('T')[0] : ""}</td>
                                 <td style={{ padding: "10px" }}>{r.end_date ? r.end_date.split('T')[0] : ""}</td>
+                                <td style={{ padding: "10px" }}>{r.room_number}</td>
                                 <td style={{ padding: "10px" }}>{r.status}</td>
                             </tr>
                         ))

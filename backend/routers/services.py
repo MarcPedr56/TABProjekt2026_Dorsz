@@ -17,7 +17,7 @@ def get_user_services(email: str, conn = Depends(get_db)):
             SELECT 
                 s.name, 
                 TO_CHAR(su.usage_date, 'YYYY-MM-DD HH24:MI') as date, 
-                'null' as status
+                su.status
             FROM Service_Usage su
             JOIN Service s ON su.service_id = s.service_id
             JOIN Reservation r ON su.reservation_id = r.reservation_id
@@ -45,7 +45,7 @@ def get_reservation_services(reservationId: int, conn = Depends(get_db)):
                 TO_CHAR(su.usage_date, 'YYYY-MM-DD HH24:MI') as date, 
                 'Ilość' as quantity,
                 'Cena łącznie' as actual_price,
-                'null' as status
+                su.status
             FROM Service_Usage su
             JOIN Service s ON su.service_id = s.service_id
             JOIN Reservation r ON su.reservation_id = r.reservation_id
@@ -78,11 +78,11 @@ def book_service(data: dict, conn = Depends(get_db)):
         dt_object = datetime.strptime(full_date, "%Y-%m-%d %H:%M")
 
         cur.execute("""
-            INSERT INTO service_usage (service_id, reservation_id, quantity, usage_date, actual_price)
+            INSERT INTO service_usage (service_id, reservation_id, quantity, usage_date, actual_price, status)
             SELECT s.service_id, %s, %s, %s, s.price * %s
             FROM service s WHERE s.service_id = %s
             RETURNING usage_id, actual_price;
-        """, (int(data["reservation_id"]), int(data["quantity"]), dt_object, int(data["quantity"]), int(data["service_id"])))
+        """, (int(data["reservation_id"]), int(data["quantity"]), dt_object, int(data["quantity"]), int(data["service_id"]), "Created"))
 
         result = cur.fetchone()
 
@@ -109,6 +109,39 @@ def get_all_services(conn = Depends(get_db)):
     try:
         cur.execute("SELECT * FROM Service ORDER BY name ASC;")
         return cur.fetchall()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+
+@router.get("/{id}")
+def get_service_availability(id: int, conn = Depends(get_db)):
+    """Pobiera liczbę dostępnych miejsc rezerwacji usługi o podanym id"""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        # Znajdź usługę o podanym id
+        cur.execute("""
+            SELECT *
+            FROM Service
+            WHERE service_id = %s;
+        """, (id,))
+        service = cur.fetchone()
+
+        if not service:
+            raise HTTPException(status_code=404, detail="Usługa o podanym id nie istnieje")
+        
+        # Policz pozostałe miejsca rezerwacji tej usługi
+        cur.execute("""
+            SELECT s.usage_limit - COUNT(su.service_id) as remaining
+            FROM Service_usage as su
+            JOIN Service s on s.service_id = su.service_id
+            WHERE su.service_id = %s
+                AND status NOT IN ('Confirmed', 'Ended')
+			GROUP BY s.service_id;
+        """, (id,))
+        count = cur.fetchone()
+
+        return count()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
