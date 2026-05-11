@@ -122,11 +122,12 @@ class ReservationCreate(ReservationBase):
     pesel: Optional[str]        = Field(None, max_length=20)
     phone_number: Optional[str] = Field(None, max_length=20)
     preferences: Optional[str]  = None
-
 class ReservationResponse(ReservationBase):
     reservation_id: int
     main_guest_id: int
     creation_date: datetime
+
+    room_number: Optional[str] = None
 
 # class ReservationCreate(BaseModel):
 #     room_id: int
@@ -227,7 +228,7 @@ class HotelTaskUpdateStatus(BaseSchema):
 
 class HotelTaskAssign(BaseSchema):
     employee_id: int
-    execution_date: Optional[date]
+    execution_date: Optional[date] = None
 
 # ==========================
 # 12. WYKONANIE ZADANIA (Task_Execution)

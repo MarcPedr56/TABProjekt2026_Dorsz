@@ -16,8 +16,12 @@ def get_tasks(conn = Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cur.execute("""
-            SELECT *
+            SELECT 
+                ht.*,
+                r.room_number
             FROM Hotel_task ht
+            JOIN Room r
+                ON r.room_id = ht.room_id
             ORDER BY ht.priority_level, ht.start_date;
         """)
         return cur.fetchall()

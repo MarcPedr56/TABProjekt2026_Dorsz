@@ -1,31 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../../store/useAuthStore';
 
 const API = "http://127.0.0.1:8000";
 
 const MyPayments = () => {
-    const [searchPesel, setSearchPesel] = useState("");
     const [payments, setPayments] = useState([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const navigate = useNavigate();
+    
+    // Zaciągamy usera ze stanu (odpowiedzialność frontendu za sesję)
+    const user = useAuthStore(state => state.user);
 
-    const fetchPayments = async () => {
-        if (!searchPesel) {
-            alert("Podaj PESEL (wina twojego backendu, że wymaga tego od zalogowanego usera).");
-            return;
-        }
+    useEffect(() => {
+        if (!user || !user.email) return;
 
-        setLoading(true);
-        try {
-            const res = await fetch(`${API}/payments/pesel/${searchPesel}`);
-            const data = await res.json();
-            setPayments(Array.isArray(data) ? data : []);
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    };
+        fetch(`${API}/payments/user/${user.email}`)
+            .then(res => res.json())
+            .then(data => {
+                setPayments(Array.isArray(data) ? data : []);
+                setLoading(false);
+            })
+            .catch(err => {
+                console.error("Błąd pobierania płatności:", err);
+                setLoading(false);
+            });
+    }, [user]);
 
     const downloadInvoice = async (paymentId) => {
         try {
@@ -47,24 +47,13 @@ const MyPayments = () => {
         }
     };
 
+    if (loading) return <div className="section"><p>Ładowanie płatności...</p></div>;
+
     return (
         <div className="section">
             <h2>Moje Płatności i Faktury</h2>
 
-            <div style={{ marginTop: "20px", display: 'flex', gap: '10px' }}>
-                <input 
-                    placeholder="Twój numer PESEL" 
-                    value={searchPesel} 
-                    onChange={(e) => setSearchPesel(e.target.value)} 
-                    className="input"
-                    style={{ width: '200px' }}
-                />
-                <button className="button" onClick={fetchPayments}>Pokaż płatności</button>
-            </div>
-
-            {loading && <p>Ładowanie...</p>}
-
-            {!loading && payments.length > 0 && (
+            {payments.length > 0 ? (
                 <table className="table" style={{ marginTop: "20px" }}>
                     <thead>
                         <tr style={{ textAlign: "left" }}>
@@ -83,7 +72,7 @@ const MyPayments = () => {
                                 <td>{p.amount} PLN</td>
                                 <td>{p.method}</td>
                                 <td>{p.status}</td>
-                                <td>{p.payment_date}</td>
+                                <td>{new Date(p.payment_date).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' })}</td>
                                 <td>
                                     <button 
                                         className="button" 
@@ -97,13 +86,11 @@ const MyPayments = () => {
                         ))}
                     </tbody>
                 </table>
+            ) : (
+                <p style={{ marginTop: '20px' }}>Brak płatności przypisanych do Twojego konta.</p>
             )}
 
-            {!loading && payments.length === 0 && searchPesel && (
-                <p style={{ marginTop: '20px' }}>Brak płatności w systemie.</p>
-            )}
-
-            <button className="link" onClick={() => navigate("/account")} style={{ display: "block" }}>
+            <button className="link" onClick={() => navigate("/account")} style={{ display: "block", marginTop: "20px" }}>
                 ← Powrót do konta
             </button>
         </div>
