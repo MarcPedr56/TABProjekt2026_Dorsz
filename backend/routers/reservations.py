@@ -128,154 +128,72 @@ def get_user_reservations(email: str, active: str, conn=Depends(get_db)):
 @router.post("/")
 def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
-
     try:
-        # 🔹 sprawdzenie dat
-        if data.start_date >= data.end_date:
-            raise HTTPException(
-                status_code=422,
-                detail="Data końca musi być późniejsza od daty początku"
-            )
+        # 1. Walidacja dat (zakaz rezerwacji wstecz)
+        today = datetime.today().date()
+        # Konwersja daty jeśli przychodzi jako string
+        start_d = data.start_date.date() if hasattr(data.start_date, 'date') else datetime.strptime(str(data.start_date).split(' ')[0], '%Y-%m-%d').date()
+        
+        if start_d < today:
+            raise HTTPException(status_code=422, detail="Nie można rezerwować pokoju na datę z przeszłości.")
 
-        # 🔹 znajdź gościa po emailu
+        # 2. Szukanie gościa
         cur.execute("""
-            SELECT g.guest_id
-            FROM Guest g
+            SELECT g.guest_id FROM Guest g
             JOIN Account a ON g.guest_id = a.guest_id
             WHERE a.email = %s
         """, (data.email,))
-
         guest = cur.fetchone()
-        guest_id = None
 
-        # 🔹 jeśli zwykły użytkownik
-        if data.role == "guest":
-            if not guest:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Gość nie istnieje"
-                )
-
+        if guest:
             guest_id = guest["guest_id"]
+        else:
+            # 3. Jeśli Admin rezerwuje dla NOWEGO gościa - twórz go!
+            if data.role in ("admin", "receptionist"):
+                if not data.first_name or not data.last_name:
+                    raise HTTPException(status_code=422, detail="Dla nowego gościa wymagane jest imię i nazwisko.")
+                
+                cur.execute("""
+                    INSERT INTO Guest (first_name, last_name, pesel, phone_number)
+                    VALUES (%s, %s, %s, %s) RETURNING guest_id
+                """, (data.first_name, data.last_name, data.pesel, data.phone_number))
+                guest_id = cur.fetchone()["guest_id"]
+                
+                # Opcjonalnie: można tu też stworzyć konto (Account), 
+                # ale dla rezerwacji "z ulicy" sam rekord Guest wystarczy.
+            else:
+                raise HTTPException(status_code=404, detail="Użytkownik o tym mailu nie ma konta gościa.")
 
-        # 🔹 jeśli admin lub recepcjonista
-        elif (data.role in ("admin", "receptionist") and not guest):
-            # dodaj nowego gościa
-            cur.execute("""
-                INSERT INTO Guest (
-                    first_name,
-                    last_name,
-                    pesel,
-                    phone_number,
-                    preferences
-                )
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING guest_id
-            """, (
-                data.first_name,
-                data.last_name,
-                data.pesel,
-                data.phone_number,
-                data.preferences
-            ))
-
-            guest = cur.fetchone()
-            guest_id = guest["guest_id"]
-
-        # 🔹 pobierz cenę pokoju
-        cur.execute("""
-            SELECT price_per_night
-            FROM Room
-            WHERE room_id = %s
-        """, (data.room_id,))
-
+        # 4. Sprawdzenie ceny i dostępności pokoju (reszta bez zmian)
+        cur.execute("SELECT price_per_night FROM Room WHERE room_id = %s", (data.room_id,))
         room = cur.fetchone()
+        if not room: raise HTTPException(status_code=404, detail="Pokój nie istnieje")
 
-        if not room:
-            raise HTTPException(
-                status_code=404,
-                detail="Pokój nie istnieje"
-            )
-
-        price = room["price_per_night"]
-
-        # 🔹 sprawdź czy pokój jest wolny
         cur.execute("""
-            SELECT 1
-            FROM Reservation re
-            JOIN Room_Reservation rr
-                ON rr.reservation_id = re.reservation_id
-            WHERE rr.room_id = %s
-                AND re.status != 'cancelled'
-                AND (re.start_date, re.end_date) OVERLAPS (%s, %s);
-        """, (
-            data.room_id,
-            data.start_date,
-            data.end_date
-        ))
+            SELECT 1 FROM Reservation re JOIN Room_Reservation rr ON rr.reservation_id = re.reservation_id
+            WHERE rr.room_id = %s AND re.status != 'cancelled'
+            AND (re.start_date, re.end_date) OVERLAPS (%s, %s)
+        """, (data.room_id, data.start_date, data.end_date))
+        
+        if cur.fetchone():
+            raise HTTPException(status_code=409, detail="Pokój zajęty w tym terminie")
 
-        existing_reservation = cur.fetchone()
-
-        if existing_reservation:
-            raise HTTPException(
-                status_code=409,
-                detail="Pokój jest już zarezerwowany w podanym terminie"
-            )
-
-        # 🔹 utwórz rezerwację
+        # 5. Zapis rezerwacji
         cur.execute("""
-            INSERT INTO Reservation (
-                main_guest_id,
-                start_date,
-                end_date,
-                status,
-                type
-            )
-            VALUES (%s, %s, %s, 'created', 'individual')
-            RETURNING reservation_id
-        """, (
-            guest_id,
-            data.start_date,
-            data.end_date
-        ))
+            INSERT INTO Reservation (main_guest_id, start_date, end_date, status, type)
+            VALUES (%s, %s, %s, 'created', 'individual') RETURNING reservation_id
+        """, (guest_id, data.start_date, data.end_date))
+        res_id = cur.fetchone()["reservation_id"]
 
-        reservation = cur.fetchone()
-        reservation_id = reservation["reservation_id"]
-
-        # 🔹 powiąż pokój z rezerwacją
-        cur.execute("""
-            INSERT INTO Room_Reservation (
-                room_id,
-                reservation_id,
-                actual_price_per_night
-            )
-            VALUES (%s, %s, %s)
-        """, (
-            data.room_id,
-            reservation_id,
-            price
-        ))
+        cur.execute("INSERT INTO Room_Reservation (room_id, reservation_id, actual_price_per_night) VALUES (%s, %s, %s)",
+                    (data.room_id, res_id, room["price_per_night"]))
 
         conn.commit()
-
-        return {
-            "reservation_id": reservation_id,
-            "price_per_night": price
-        }
-
-    except HTTPException:
-        conn.rollback()
-        raise
+        return {"reservation_id": res_id, "message": "Rezerwacja stworzona pomyślnie"}
 
     except Exception as e:
         conn.rollback()
-        print("DB ERROR:", e)
-
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
-
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
 
