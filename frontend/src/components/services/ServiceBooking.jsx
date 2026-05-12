@@ -9,7 +9,10 @@ const ServiceBooking = () => {
     const navigate = useNavigate();
     const { user, role } = useAuthStore();
 
-    const today = new Date().toISOString().split("T")[0];
+    let date = new Date();
+    date.setTime(date.getTime() - date.getTimezoneOffset() * 60 * 1000);
+    let [today, now] = date.toISOString().split("T");
+    now = now.substring(0,5);
     const [service, setService] = useState(null);
     const [reservations, setReservations] = useState([]);
     const [successMsg, setSuccessMsg] = useState(null);
@@ -17,7 +20,7 @@ const ServiceBooking = () => {
 
     const [form, setForm] = useState({
         date: today,
-        time: "12:00",
+        time: now,
         quantity: 1,
         reservationId: ""
     });
@@ -112,14 +115,16 @@ const ServiceBooking = () => {
                         <input
                             type="date"
                             className="input"
+                            min={today}
                             value={form.date}
                             onChange={e => setForm({ ...form, date: e.target.value })}
                         />
                         <input
                             type="time"
                             className="input"
+                            min={now}
                             value={form.time}
-                            onChange={e => setForm({ ...form, time: e.target.value })}
+                            onChange={e => {setForm({ ...form, time: e.target.value }); console.log(now);}}
                         />
                     </div>
                 </div>

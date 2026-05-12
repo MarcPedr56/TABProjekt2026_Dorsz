@@ -72,17 +72,20 @@ def book_service(data: dict, conn = Depends(get_db)):
         service_date = datetime.strptime(data["usage_date"], "%Y-%m-%d").date()
         if not (res_info["start_date"] <= service_date <= res_info["end_date"]):
             raise HTTPException(status_code=422, detail="Usługa poza terminem pobytu")
-
-        # 3. Zapis usługi i pobranie ceny
+        
         full_date = f"{data['usage_date']} {data['usage_time']}"
         dt_object = datetime.strptime(full_date, "%Y-%m-%d %H:%M")
 
+        if datetime.now() > dt_object: 
+            raise HTTPException(status_code=422, detail="Podany termin już minął")
+
+        # 3. Zapis usługi i pobranie ceny
         cur.execute("""
             INSERT INTO service_usage (service_id, reservation_id, quantity, usage_date, actual_price, status)
-            SELECT s.service_id, %s, %s, %s, s.price * %s
+            SELECT s.service_id, %s, %s, %s, s.price * %s, %s
             FROM service s WHERE s.service_id = %s
             RETURNING usage_id, actual_price;
-        """, (int(data["reservation_id"]), int(data["quantity"]), dt_object, int(data["quantity"]), int(data["service_id"]), "Created"))
+        """, (int(data["reservation_id"]), int(data["quantity"]), dt_object, int(data["quantity"]), "Created", int(data["service_id"])))
 
         result = cur.fetchone()
 
