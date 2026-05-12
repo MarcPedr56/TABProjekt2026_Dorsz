@@ -89,10 +89,10 @@ def book_service(data: dict, conn = Depends(get_db)):
             WHERE su.service_id = %s
                 AND status NOT IN ('Confirmed', 'Ended')
 			GROUP BY s.service_id;
-        """, (int(data["service_id"])))
+        """, (int(data["service_id"]),))
         count = cur.fetchone()
 
-        if count <= 0:
+        if int(count["remaining"]) <= 0:
             raise HTTPException(status_code=409, detail="Osiągnięto limit rezerwacji tej usługi")
 
         # 4. Zapis usługi i pobranie ceny
