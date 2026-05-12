@@ -78,8 +78,24 @@ def book_service(data: dict, conn = Depends(get_db)):
 
         if datetime.now() > dt_object: 
             raise HTTPException(status_code=422, detail="Podany termin już minął")
+        
+        # 3. Sprawdzenie, czy nie został już osiągnięty limit rezerwacji tej usługi
 
-        # 3. Zapis usługi i pobranie ceny
+        # pozostałe miejsca rezerwacji tej usługi
+        cur.execute("""
+            SELECT s.usage_limit - COUNT(su.service_id) as remaining
+            FROM Service_usage as su
+            JOIN Service s on s.service_id = su.service_id
+            WHERE su.service_id = %s
+                AND status NOT IN ('Confirmed', 'Ended')
+			GROUP BY s.service_id;
+        """, (int(data["service_id"])))
+        count = cur.fetchone()
+
+        if count <= 0:
+            raise HTTPException(status_code=409, detail="Osiągnięto limit rezerwacji tej usługi")
+
+        # 4. Zapis usługi i pobranie ceny
         cur.execute("""
             INSERT INTO service_usage (service_id, reservation_id, quantity, usage_date, actual_price, status)
             SELECT s.service_id, %s, %s, %s, s.price * %s, %s
