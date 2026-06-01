@@ -222,6 +222,8 @@ class HotelTaskCreate(HotelTaskBase):
 
 class HotelTaskResponse(HotelTaskBase):
     task_id: int
+    room_number: Optional[str] = None
+    assigned_employee_id: Optional[int] = None
 
 class HotelTaskUpdateStatus(BaseSchema):
     status: str
