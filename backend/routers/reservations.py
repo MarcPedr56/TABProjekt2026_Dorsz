@@ -126,8 +126,8 @@ def create_reservation(data: schemas.ReservationCreate, conn=Depends(get_db)):
             guest_id = guest["guest_id"]
         else:
             if data.role in ("admin", "receptionist"):
-                if not data.first_name or not data.last_name:
-                    raise HTTPException(status_code=422, detail="Dla nowego gościa wymagane jest imię i nazwisko.")
+                if not data.first_name or not data.last_name or not data.pesel or not data.phone_number:
+                    raise HTTPException(status_code=422, detail="Dla nowego gościa wymagane jest imię, nazwisko, pesel i numer telefonu.")
                 cur.execute("""
                     INSERT INTO Guest (first_name, last_name, pesel, phone_number)
                     VALUES (%s, %s, %s, %s) RETURNING guest_id

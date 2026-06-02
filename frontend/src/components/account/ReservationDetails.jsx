@@ -180,13 +180,18 @@ const ReservationDetails = () => {
             // ✅ sukces
             alert(data.message || "Anulowano rezerwację");
 
-            fetchReservations();
+            // TODO: Zaimplementować powrót do listy rezerwacji? Może do tego jest kod poniżej?
+            // UPDATE: Może tylko tyle wystarczy
+            navigate(-1);
 
-            if (role === "guest") {
-                fetchMyReservations();
-            }
+            // TODO: Brak implementacji tych 2 funkcji
+            // fetchReservations();
 
-            goBack();
+            // if (role === "guest") {
+            //     fetchMyReservations();
+            // }
+
+            // goBack();
 
         } catch (err) {
 

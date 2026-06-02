@@ -450,6 +450,11 @@ const AdminReservationDetails = () => {
             >
 
                 <p>
+                    <strong>Pokój:</strong>{" "}
+                    {reservation.room_number || "Brak"}
+                </p>
+
+                <p>
                     <strong>Gość (ID):</strong>{" "}
                     {reservation.main_guest_id}
                 </p>

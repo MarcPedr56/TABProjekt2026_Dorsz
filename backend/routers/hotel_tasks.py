@@ -18,10 +18,11 @@ def get_tasks(conn = Depends(get_db)):
         cur.execute("""
             SELECT 
                 ht.*,
-                r.room_number
+                r.room_number,
+                te.employee_id as assigned_employee_id
             FROM Hotel_task ht
-            JOIN Room r
-                ON r.room_id = ht.room_id
+            JOIN Room r ON r.room_id = ht.room_id
+            LEFT JOIN Task_execution te ON ht.task_id = te.task_id
             ORDER BY ht.priority_level, ht.start_date;
         """)
         return cur.fetchall()

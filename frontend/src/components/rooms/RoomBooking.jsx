@@ -58,12 +58,12 @@ const RoomBooking = () => {
                 alert("Błąd: Imię i nazwisko muszą mieć co najmniej 2 znaki!");
                 return;
             }
-            if (pesel && !/^\d{11}$/.test(pesel)) {
-                alert("Błąd: PESEL musi składać się z dokładnie 11 cyfr!");
+            if (!pesel || !/^\d{11}$/.test(pesel)) {
+                alert("Błąd: PESEL jest wymagany i musi składać się z dokładnie 11 cyfr!");
                 return;
             }
-            if (phone && !/^\d{9,}$/.test(phone.replace(/\s/g, ""))) {
-                alert("Błąd: Numer telefonu powinien mieć co najmniej 9 cyfr!");
+            if (!phone || !/^\d{9,}$/.test(phone.replace(/\s/g, ""))) {
+                alert("Błąd: Numer telefonu jest wymagany i powinien mieć co najmniej 9 cyfr!");
                 return;
             }
         }
@@ -134,7 +134,7 @@ const RoomBooking = () => {
                             <input type="text" placeholder="Imię" value={firstName} onChange={e => setFirstName(e.target.value)} className="input" />
                             <input type="text" placeholder="Nazwisko" value={lastName} onChange={e => setLastName(e.target.value)} className="input" />
                         </div>
-                        <input type="text" placeholder="PESEL (opcjonalnie)" value={pesel} onChange={e => setPesel(e.target.value)} className="input" style={{ marginTop: '10px' }} />
+                        <input type="text" placeholder="PESEL" value={pesel} onChange={e => setPesel(e.target.value)} className="input" style={{ marginTop: '10px' }} />
                         <input type="text" placeholder="Telefon" value={phone} onChange={e => setPhone(e.target.value)} className="input" style={{ marginTop: '10px' }} />
                     </div>
                 )}

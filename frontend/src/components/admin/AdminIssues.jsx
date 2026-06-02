@@ -25,7 +25,24 @@ const AdminIssues = () => {
         fetch(`${API}/tasks`)
             .then(res => res.json())
             .then(data => {
-                setTasks(Array.isArray(data) ? data : []);
+                const tasksArray = Array.isArray(data) ? data : [];
+                setTasks(tasksArray);
+
+                // --- SYNCHRONIZACJA DROPDOWNÓW Z BAZĄ ---
+                const initialEmps = {};
+                const initialStats = {};
+
+                tasksArray.forEach(t => {
+                    // Jeśli w bazie jest przypisany pracownik, ustaw go w dropdownie
+                    if (t.assigned_employee_id) {
+                        initialEmps[t.task_id] = t.assigned_employee_id;
+                    }
+                    // Ustaw aktualny status z bazy
+                    initialStats[t.task_id] = t.status;
+                });
+
+                setSelectedEmployees(initialEmps);
+                setSelectedStatuses(initialStats);
                 setLoading(false);
             })
             .catch(err => {
