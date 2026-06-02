@@ -143,60 +143,46 @@ def update_task_status(id: int, data: schemas.HotelTaskUpdateStatus, conn=Depend
 @router.put("/{id}/assign")
 def assign_task(id: int, data: schemas.HotelTaskAssign, conn=Depends(get_db)):
     cur = conn.cursor(cursor_factory=RealDictCursor)
-
     try:
-        # 🔹 znajdź hotel_task
-        cur.execute("""
-            SELECT ht.task_id
-            FROM Hotel_task ht
-            WHERE ht.task_id = %s
-        """, (id,))
-        task = cur.fetchone()
-
-        if not task:
+        cur.execute("SELECT task_id FROM Hotel_task WHERE task_id = %s", (id,))
+        if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Praca hotelowa nie istnieje")
         
-        # 🔹 znajdź employee
-        cur.execute("""
-            SELECT e.employee_id
-            FROM Employee e
-            WHERE e.employee_id = %s
-        """, (data.employee_id,))
-        employee = cur.fetchone()
+        cur.execute("SELECT employee_id FROM Employee WHERE employee_id = %s", (data.employee_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Wybrany pracownik nie istnieje w bazie")
 
-        if not employee:
-            raise HTTPException(status_code=404, detail="Pracownik nie istnieje")
-        
-        # 🔹 sprawdź, czy pracownik nie został już przypisany do tej pracy
-        cur.execute("""
-            SELECT te.employee_id, te.task_id
-            FROM Task_execution te
-            WHERE te.employee_id = %s 
-                    AND te.task_id = %s
-        """, (data.employee_id,id))
-        task_execution = cur.fetchone()
+        cur.execute("SELECT employee_id FROM Task_execution WHERE task_id = %s", (id,))
+        existing_assignment = cur.fetchone()
 
-        if task_execution:
-            raise HTTPException(status_code=422, detail="Pracownik jest już przypisany do tego zadania hotelowego")
-
-        # 🔹 utwórz nowe task_execution
-        cur.execute("""
-            INSERT INTO Task_execution 
-                    (employee_id, task_id, execution_date)
-            VALUES (%s, %s, %s)
-            RETURNING task_id
-        """, (
-            data.employee_id,
-            id,
-            (datetime.today().strftime("%Y-%m-%d"), data.execution_date)[data.execution_date != None],
-        ))
+        if existing_assignment:
+            cur.execute("""
+                UPDATE Task_execution 
+                SET employee_id = %s, execution_date = %s
+                WHERE task_id = %s
+            """, (
+                data.employee_id,
+                datetime.today().date(),
+                id
+            ))
+            msg = "Pracownik został zmieniony pomyślnie"
+        else:
+            cur.execute("""
+                INSERT INTO Task_execution (employee_id, task_id, execution_date)
+                VALUES (%s, %s, %s)
+            """, (
+                data.employee_id,
+                id,
+                datetime.today().date()
+            ))
+            msg = "Pracownik został przypisany pomyślnie"
 
         conn.commit()
+        return {"message": msg}
 
     except Exception as e:
         conn.rollback()
-        print("DB ERROR:", e)
-        raise HTTPException(status_code=500, detail=str(e))
-
+        print(f"DB ERROR przy przypisywaniu: {e}")
+        raise HTTPException(status_code=500, detail="Błąd bazy danych przy przypisywaniu pracownika")
     finally:
         cur.close()
